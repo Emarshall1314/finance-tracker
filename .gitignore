@@ -1,0 +1,44 @@
+# --- Android / Gradle ---
+.gradle/
+build/
+**/build/
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+output-metadata.json
+local.properties
+.kotlin/
+
+# --- IDEs ---
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db
+
+# --- Secrets: never commit ---
+keystore.properties
+*.jks
+*.keystore
+*.p12
+*.pem
+.env
+.env.*
+
+# --- Real financial data: never commit ---
+samples/
+*.csv
+*.ofx
+*.qfx
+*.qbo
+*.pdf
+*.xls
+*.xlsx
+# ...except synthetic fixtures used by tests
+!**/src/test/resources/fixtures/**
+!**/src/androidTest/resources/fixtures/**
