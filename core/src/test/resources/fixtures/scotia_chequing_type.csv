@@ -1,0 +1,5 @@
+Filter,Date,Description,Sub-description,Status,Type of Transaction,Amount,Balance
+All,2026-04-03,Point of sale purchase,"NETFLIX.COM, 866-579-7172",Posted,Debit,16.99,1203.34
+All,2026-04-02,Payroll deposit,ACME WIDGETS INC,Posted,Credit,2450.00,1220.33
+All,2026-04-01,Customer transfer Dr.,QUESTRADE INC,Posted,Debit,500.00,-1229.67
+All,2026-04-01,Point of sale purchase,"PETRO-CANADA 98765, NORTH VAN BC",Posted,Debit,61.20,-729.67
