@@ -84,6 +84,24 @@ class SecretStore @Inject constructor(@ApplicationContext private val context: C
         }
     }
 
+    /** Encrypts a file's bytes, bound to [label] (e.g. "statement:42") so files can't be swapped. */
+    fun sealBytes(label: String, plain: ByteArray): ByteArray = aead.encrypt(plain, label.toByteArray())
+
+    fun openBytes(label: String, cipher: ByteArray): ByteArray = aead.decrypt(cipher, label.toByteArray())
+
+    /** The user's own Anthropic API key for the opt-in Claude coach. Never logged or exported. */
+    suspend fun anthropicKey(): String? = decrypt(K_ANTHROPIC.name, store.data.first()[K_ANTHROPIC])
+
+    suspend fun setAnthropicKey(key: String?) {
+        store.edit { if (key.isNullOrBlank()) it.remove(K_ANTHROPIC) else it[K_ANTHROPIC] = encrypt(K_ANTHROPIC.name, key.trim()) }
+    }
+
+    /** Removes every secret except the database passphrase (used by "Delete all data"). */
+    suspend fun clearAll() {
+        clear()
+        setAnthropicKey(null)
+    }
+
     override suspend fun clear() {
         store.edit {
             it.remove(K_QT_ACCESS); it.remove(K_QT_REFRESH); it.remove(K_QT_SERVER); it.remove(K_QT_EXPIRES)
@@ -99,5 +117,6 @@ class SecretStore @Inject constructor(@ApplicationContext private val context: C
         private val K_QT_REFRESH = stringPreferencesKey("qt_refresh")
         private val K_QT_SERVER = stringPreferencesKey("qt_server")
         private val K_QT_EXPIRES = stringPreferencesKey("qt_expires")
+        private val K_ANTHROPIC = stringPreferencesKey("anthropic_api_key")
     }
 }

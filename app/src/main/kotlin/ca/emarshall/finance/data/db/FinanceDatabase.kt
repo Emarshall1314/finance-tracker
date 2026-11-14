@@ -1,6 +1,7 @@
 package ca.emarshall.finance.data.db
 
 import android.content.Context
+import androidx.room.AutoMigration
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
@@ -19,10 +20,11 @@ class Converters {
     entities = [
         AccountEntity::class, TransactionEntity::class, CategoryEntity::class, CategoryRuleEntity::class,
         ImportBatchEntity::class, CsvProfileEntity::class, BalanceSnapshotEntity::class, QtBalanceEntity::class,
-        QtPositionEntity::class, QtActivityEntity::class, ReminderEntity::class,
+        QtPositionEntity::class, QtActivityEntity::class, ReminderEntity::class, GoalEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
+    autoMigrations = [AutoMigration(from = 1, to = 2)],
 )
 @TypeConverters(Converters::class)
 abstract class FinanceDatabase : RoomDatabase() {
@@ -33,6 +35,7 @@ abstract class FinanceDatabase : RoomDatabase() {
     abstract fun balances(): BalanceDao
     abstract fun questrade(): QuestradeDao
     abstract fun reminders(): ReminderDao
+    abstract fun goals(): GoalDao
 
     companion object {
         const val NAME = "finance.db"

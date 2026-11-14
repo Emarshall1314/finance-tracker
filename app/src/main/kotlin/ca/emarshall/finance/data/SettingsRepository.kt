@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
@@ -30,6 +31,12 @@ data class AppSettings(
     val generalReminderDay: Int = 3,
     val generalReminderMinutes: Int = 9 * 60,
     val checklistDismissed: Boolean = false,
+    /** Insight ids the user dismissed. */
+    val dismissedInsights: Set<String> = emptySet(),
+    /** Insight ids already sent as a notification. */
+    val notifiedInsights: Set<String> = emptySet(),
+    /** The opt-in Claude coach: off until the user enables it and accepts what's shared. */
+    val claudeEnabled: Boolean = false,
 )
 
 /** Non-secret preferences. Secrets live in [ca.emarshall.finance.security.SecretStore]. */
@@ -48,6 +55,9 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val con
             generalReminderDay = p[GEN_DAY] ?: 3,
             generalReminderMinutes = p[GEN_MINUTES] ?: 9 * 60,
             checklistDismissed = p[CHECKLIST_DISMISSED] ?: false,
+            dismissedInsights = p[DISMISSED_INSIGHTS] ?: emptySet(),
+            notifiedInsights = p[NOTIFIED_INSIGHTS] ?: emptySet(),
+            claudeEnabled = p[CLAUDE_ENABLED] ?: false,
         )
     }
 
@@ -68,6 +78,16 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val con
         it[GEN_ENABLED] = enabled; it[GEN_DAY] = day; it[GEN_MINUTES] = minutes
     }
 
+    suspend fun dismissInsight(id: String) = ds.edit { it[DISMISSED_INSIGHTS] = (it[DISMISSED_INSIGHTS] ?: emptySet()) + id }
+    suspend fun restoreInsights() = ds.edit { it.remove(DISMISSED_INSIGHTS) }
+
+    /** Remembers notified ids, keeping the set small (ids for old dates fall out of the insight window anyway). */
+    suspend fun markNotified(ids: Collection<String>) = ds.edit {
+        it[NOTIFIED_INSIGHTS] = ((it[NOTIFIED_INSIGHTS] ?: emptySet()) + ids).toList().takeLast(500).toSet()
+    }
+
+    suspend fun setClaudeEnabled(on: Boolean) = ds.edit { it[CLAUDE_ENABLED] = on }
+
     suspend fun clearAll() = ds.edit { it.clear() }
 
     private companion object {
@@ -80,5 +100,8 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val con
         val GEN_DAY = intPreferencesKey("general_reminder_day")
         val GEN_MINUTES = intPreferencesKey("general_reminder_minutes")
         val CHECKLIST_DISMISSED = booleanPreferencesKey("checklist_dismissed")
+        val DISMISSED_INSIGHTS = stringSetPreferencesKey("dismissed_insights")
+        val NOTIFIED_INSIGHTS = stringSetPreferencesKey("notified_insights")
+        val CLAUDE_ENABLED = booleanPreferencesKey("claude_enabled")
     }
 }

@@ -43,7 +43,19 @@
                 <data android:mimeType="application/vnd.intu.qbo" />
                 <data android:mimeType="application/octet-stream" />
             </intent-filter>
-            <!-- "Open with" -->
+            <!-- Several statements shared at once -->
+            <intent-filter android:label="@string/import_into_app">
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/pdf" />
+                <data android:mimeType="text/csv" />
+                <data android:mimeType="text/comma-separated-values" />
+                <data android:mimeType="application/x-ofx" />
+                <data android:mimeType="application/vnd.intu.qfx" />
+                <data android:mimeType="application/vnd.intu.qbo" />
+                <data android:mimeType="application/octet-stream" />
+            </intent-filter>
+            <!-- "Open with": banking apps that open a statement offer this app as a viewer -->
             <intent-filter android:label="@string/import_into_app">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -56,6 +68,7 @@
                 <data android:mimeType="application/x-ofx" />
                 <data android:mimeType="application/vnd.intu.qfx" />
                 <data android:mimeType="application/vnd.intu.qbo" />
+                <data android:mimeType="application/octet-stream" />
             </intent-filter>
         </activity>
 

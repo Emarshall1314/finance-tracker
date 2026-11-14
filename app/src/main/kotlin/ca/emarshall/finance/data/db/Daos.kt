@@ -212,6 +212,12 @@ interface ImportDao {
 
     @Query("SELECT COUNT(*) FROM import_batches")
     fun observeCount(): Flow<Int>
+
+    @Query("SELECT * FROM import_batches")
+    suspend fun allBatches(): List<ImportBatchEntity>
+
+    @Query("SELECT * FROM import_batches WHERE hasFile = 1")
+    suspend fun batchesWithFiles(): List<ImportBatchEntity>
 }
 
 @Dao
@@ -272,4 +278,19 @@ interface ReminderDao {
 
     @Query("UPDATE reminders SET nextFireAtMillis = :millis WHERE id = :id")
     suspend fun setNextFire(id: Long, millis: Long?)
+}
+
+@Dao
+interface GoalDao {
+    @Query("SELECT * FROM goals WHERE active = 1 ORDER BY createdAtMillis")
+    fun observeActive(): Flow<List<GoalEntity>>
+
+    @Query("SELECT * FROM goals WHERE id = :id")
+    suspend fun get(id: Long): GoalEntity?
+
+    @Upsert
+    suspend fun upsert(g: GoalEntity): Long
+
+    @Query("DELETE FROM goals WHERE id = :id")
+    suspend fun delete(id: Long)
 }

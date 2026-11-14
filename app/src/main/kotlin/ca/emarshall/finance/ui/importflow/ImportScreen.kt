@@ -38,6 +38,7 @@ import ca.emarshall.finance.core.csv.CsvStatementParser
 import ca.emarshall.finance.core.csv.SignConvention
 import ca.emarshall.finance.data.DetectedFile
 import ca.emarshall.finance.data.ImportRepository
+import ca.emarshall.finance.data.QuickImportOutcome
 import ca.emarshall.finance.data.db.AccountEntity
 import ca.emarshall.finance.data.institutionEnum
 import ca.emarshall.finance.data.typeEnum
@@ -71,7 +72,11 @@ fun ImportScreen(nav: NavController, vm: ImportViewModel = hiltViewModel()) {
                 ImportStep.Working -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     CircularProgressIndicator(); Text("Reading…")
                 }
-                is ImportStep.ChooseAccount -> ChooseAccount(s.detected, accounts, vm.preselectedAccountId, vm::chooseAccount, vm::createAccountFromHint)
+                is ImportStep.ChooseAccount -> {
+                    s.reason?.let { Text("Needs a quick check: $it", color = MaterialTheme.colorScheme.error) }
+                    ChooseAccount(s.detected, accounts, vm.preselectedAccountId, vm::chooseAccount, vm::createAccountFromHint)
+                }
+                is ImportStep.Batch -> BatchStep(s, vm)
                 is ImportStep.Mapping -> MappingEditor(s, vm)
                 is ImportStep.Preview -> PreviewStep(s, vm)
                 is ImportStep.Done -> DoneStep(s, vm, onView = { nav.navigate(TransactionsRoute(accountId = s.result.accountId)) })
@@ -85,13 +90,37 @@ fun ImportScreen(nav: NavController, vm: ImportViewModel = hiltViewModel()) {
 }
 
 @Composable
+private fun BatchStep(s: ImportStep.Batch, vm: ImportViewModel) {
+    Text(if (s.working) "Importing ${s.files.size} files…" else "Done", style = MaterialTheme.typography.titleLarge)
+    if (s.working) CircularProgressIndicator()
+    s.files.forEach { f ->
+        SectionCard(f.name) {
+            when (val o = f.outcome) {
+                null -> Text(f.error ?: "Waiting…", color = if (f.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                is QuickImportOutcome.Imported -> Text("Imported ${o.result.newCount} transactions into ${o.accountName}" +
+                    if (o.result.duplicateCount > 0) " (${o.result.duplicateCount} already there)" else "")
+                is QuickImportOutcome.AlreadyImported -> Text("Already imported into ${o.accountName}.")
+                is QuickImportOutcome.NeedsReview -> {
+                    Text(o.reason, color = MaterialTheme.colorScheme.error)
+                    OutlinedButton(onClick = { vm.review(o) }) { Text("Review") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun PickFile(onPick: () -> Unit) {
     Text("Import a statement or export from Scotiabank or Canadian Tire Bank.", style = MaterialTheme.typography.bodyLarge)
     SectionCard("What works") {
         Text("• PDF e-statements (Scotiabank chequing, Scotia Visa, Triangle Mastercard)")
         Text("• CSV downloads, with a column-mapping screen for new layouts")
         Text("• OFX, QFX (Quicken) and QBO (QuickBooks) downloads")
-        Text("You can also share a file to this app from Files, Drive or Gmail.", style = MaterialTheme.typography.bodySmall)
+        Text(
+            "Fastest: when your banking app shows a statement and asks which app to open it with, pick Finance Tracker. " +
+                "It's imported straight away. Sharing from Files, Drive or Gmail works too.",
+            style = MaterialTheme.typography.bodySmall,
+        )
     }
     Button(onClick = onPick, modifier = Modifier.fillMaxWidth()) { Text("Choose a file") }
 }

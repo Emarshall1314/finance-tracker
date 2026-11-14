@@ -70,8 +70,13 @@ class MainActivity : FragmentActivity() {
     private fun handleIntent(intent: Intent?) {
         intent ?: return
         val nav: PendingNav? = when (intent.action) {
-            Intent.ACTION_SEND -> IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)?.let { PendingNav.ImportFile(it.toString()) }
-            Intent.ACTION_VIEW -> intent.data?.let { PendingNav.ImportFile(it.toString()) }
+            // "Open with" / "Share" from a banking app, Files, Drive or Gmail: import straight away.
+            Intent.ACTION_SEND -> IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
+                ?.let { PendingNav.ImportFiles(listOf(it.toString())) }
+            Intent.ACTION_SEND_MULTIPLE -> IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
+                ?.takeIf { it.isNotEmpty() }?.let { list -> PendingNav.ImportFiles(list.map { it.toString() }) }
+            Intent.ACTION_VIEW -> intent.data?.let { PendingNav.ImportFiles(listOf(it.toString())) }
+            ACTION_INSIGHTS -> PendingNav.Insights
             ACTION_IMPORT -> PendingNav.ImportForAccount(intent.getLongExtra(EXTRA_ACCOUNT_ID, -1))
             ACTION_QUESTRADE -> PendingNav.Questrade
             else -> null
@@ -113,6 +118,7 @@ class MainActivity : FragmentActivity() {
     companion object {
         const val ACTION_IMPORT = "ca.emarshall.finance.action.IMPORT"
         const val ACTION_QUESTRADE = "ca.emarshall.finance.action.QUESTRADE"
+        const val ACTION_INSIGHTS = "ca.emarshall.finance.action.INSIGHTS"
         const val EXTRA_ACCOUNT_ID = "account_id"
     }
 }

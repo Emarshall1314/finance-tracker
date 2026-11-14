@@ -40,6 +40,8 @@ import ca.emarshall.finance.core.money.Money
 import ca.emarshall.finance.ui.AccountsRoute
 import ca.emarshall.finance.ui.BillsRoute
 import ca.emarshall.finance.ui.ImportRoute
+import ca.emarshall.finance.ui.InsightsRoute
+import ca.emarshall.finance.ui.StatementsRoute
 import ca.emarshall.finance.ui.LabeledRow
 import ca.emarshall.finance.ui.MoneyText
 import ca.emarshall.finance.ui.QuestradeRoute
@@ -71,6 +73,7 @@ import java.time.YearMonth
 @Composable
 fun OverviewScreen(nav: NavController, vm: OverviewViewModel = hiltViewModel()) {
     val s by vm.state.collectAsStateWithLifecycle()
+    val attention by vm.attention.collectAsStateWithLifecycle()
     Column(Modifier.fillMaxSize()) {
         TopAppBar(title = { Text("Overview") })
         Column(
@@ -79,6 +82,28 @@ fun OverviewScreen(nav: NavController, vm: OverviewViewModel = hiltViewModel()) 
         ) {
             if (!s.loading && !s.checklist.complete && !s.checklist.dismissed) {
                 SetupChecklist(s.checklist, nav, onDismiss = vm::dismissChecklist)
+            }
+            if (attention.first.isNotEmpty() || attention.second > 0) {
+                SectionCard("Needs attention") {
+                    if (attention.second > 0) {
+                        Row(
+                            Modifier.fillMaxWidth().clickable { nav.navigate(StatementsRoute) }.padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFE6A100))
+                            Text(if (attention.second == 1) "1 statement is missing" else "${attention.second} statements are missing")
+                        }
+                    }
+                    attention.first.forEach { i ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable { nav.navigate(InsightsRoute) }.padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFE6A100))
+                            Text(i.title)
+                        }
+                    }
+                }
             }
             if (!s.loading && s.hasTransactions) {
                 MonthPicker(s.month, vm::previousMonth, vm::nextMonth)

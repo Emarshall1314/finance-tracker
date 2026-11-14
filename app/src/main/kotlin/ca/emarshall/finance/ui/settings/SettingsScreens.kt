@@ -14,7 +14,9 @@ import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
@@ -50,6 +52,8 @@ import ca.emarshall.finance.ui.AccountsRoute
 import ca.emarshall.finance.ui.BackTopBar
 import ca.emarshall.finance.ui.BillsRoute
 import ca.emarshall.finance.ui.CategoriesRoute
+import ca.emarshall.finance.ui.ClaudeSetupRoute
+import ca.emarshall.finance.ui.StatementsRoute
 import ca.emarshall.finance.ui.ImportHistoryRoute
 import ca.emarshall.finance.ui.LabeledRow
 import ca.emarshall.finance.ui.Picker
@@ -84,17 +88,19 @@ fun SettingsScreen(nav: NavController, vm: SettingsViewModel = hiltViewModel()) 
         TopAppBar(title = { Text("Settings") })
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             Item("Accounts", Icons.Default.AccountBalance) { nav.navigate(AccountsRoute) }
+            Item("Statements (library & missing)", Icons.Default.Description) { nav.navigate(StatementsRoute) }
             Item("Imports (and undo)", Icons.Default.FileUpload) { nav.navigate(ImportHistoryRoute) }
             Item("Questrade", Icons.AutoMirrored.Filled.ShowChart) { nav.navigate(QuestradeRoute) }
             Item("Statement reminders", Icons.Default.Notifications) { nav.navigate(RemindersRoute) }
             Item("Bills & subscriptions", Icons.Default.Autorenew) { nav.navigate(BillsRoute) }
             Item("Categories & rules", Icons.Default.Category) { nav.navigate(CategoriesRoute) }
+            Item("Claude coach (optional)", Icons.Default.AutoAwesome) { nav.navigate(ClaudeSetupRoute) }
             Item("Summary for Claude & export", Icons.Default.Share) { nav.navigate(SummaryRoute) }
             Item("App lock & privacy", Icons.Default.Lock) { nav.navigate(SecurityRoute) }
             Item("Delete all data", Icons.Default.DeleteForever) { confirm = true }
             Text(
                 "Finance Tracker ${BuildConfig.VERSION_NAME}. Your data stays on this phone, encrypted. The only network " +
-                    "connections are to Questrade, read-only.",
+                    "connections are to Questrade (read-only) and, only if you turn on the Claude coach, to Anthropic.",
                 Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall,
             )
             if (deleted) Text("All data deleted.", Modifier.padding(16.dp), color = MaterialTheme.colorScheme.primary)
@@ -144,7 +150,7 @@ fun SecurityScreen(nav: NavController, vm: SettingsViewModel = hiltViewModel()) 
             SectionCard("Where your data lives") {
                 Text("• Everything is in an encrypted database on this phone (SQLCipher). The key is protected by Android's Keystore.")
                 Text("• No cloud, no analytics, no ads. Backups and device-to-device transfer are turned off for this app.")
-                Text("• The only internet connections go to Questrade's login and API servers, read-only.")
+                Text("• Internet connections go only to Questrade's login and API servers (read-only), plus api.anthropic.com if you turn on the optional Claude coach.")
                 Text("• Bank data only comes in as files you import. The app never asks for bank passwords.")
             }
         }

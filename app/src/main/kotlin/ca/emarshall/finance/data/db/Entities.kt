@@ -1,5 +1,6 @@
 package ca.emarshall.finance.data.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -106,6 +107,11 @@ data class ImportBatchEntity(
     val newCount: Int,
     val duplicateCount: Int,
     val importedAtMillis: Long,
+    /** The statement period printed on the file (PDF/OFX), when it has one. Used for missing-statement checks. */
+    @ColumnInfo(defaultValue = "NULL") val periodStart: LocalDate? = null,
+    @ColumnInfo(defaultValue = "NULL") val periodEnd: LocalDate? = null,
+    /** The original file is kept, encrypted, in the statement library. */
+    @ColumnInfo(defaultValue = "0") val hasFile: Boolean = false,
 )
 
 @Entity(tableName = "csv_profiles")
@@ -205,4 +211,22 @@ data class ReminderEntity(
     val timeOfDayMinutes: Int = 9 * 60,
     val enabled: Boolean = true,
     val nextFireAtMillis: Long? = null,
+)
+
+@Entity(tableName = "goals")
+data class GoalEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    /** [ca.emarshall.finance.core.goals.GoalType] name. */
+    val type: String,
+    val title: String,
+    val targetCents: Long? = null,
+    val targetPercent: Int? = null,
+    /** Category key (built-in) or "id:<n>" (custom) for spending limits. */
+    val categoryKey: String? = null,
+    val start: java.time.LocalDate,
+    val deadline: java.time.LocalDate? = null,
+    /** Why the goal exists, e.g. Claude's reasoning when it suggested it. */
+    val note: String? = null,
+    val active: Boolean = true,
+    val createdAtMillis: Long = System.currentTimeMillis(),
 )

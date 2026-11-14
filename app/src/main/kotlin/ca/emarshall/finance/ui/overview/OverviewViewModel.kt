@@ -71,7 +71,14 @@ class OverviewViewModel @Inject constructor(
     categories: CategoryRepository,
     reminders: ReminderRepository,
     private val settings: SettingsRepository,
+    insights: ca.emarshall.finance.data.InsightsRepository,
+    statements: ca.emarshall.finance.data.StatementsRepository,
 ) : ViewModel() {
+    /** Top unusual-activity items and missing statements, for the "Needs attention" card. */
+    val attention = kotlinx.coroutines.flow.combine(insights.visible, statements.missingCount) { ins, missing ->
+        ins.filter { it.severity >= ca.emarshall.finance.core.insights.Severity.WARNING }.take(3) to missing
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList<ca.emarshall.finance.core.insights.Insight>() to 0)
+
     private val month = MutableStateFlow(YearMonth.now())
 
     private val base = combine(transactions.rows, accounts.accounts, categories.categories, db.balances().observeAll(), db.imports().observeCount()) {

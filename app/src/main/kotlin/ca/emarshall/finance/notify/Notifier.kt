@@ -30,6 +30,11 @@ class Notifier @Inject constructor(@ApplicationContext private val context: Cont
             },
         )
         nm.createNotificationChannel(
+            NotificationChannel(CH_INSIGHTS, "Unusual activity", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                description = "Large or duplicate charges, fees, interest and other things worth a look"
+            },
+        )
+        nm.createNotificationChannel(
             NotificationChannel(CH_QUESTRADE, "Questrade connection", NotificationManager.IMPORTANCE_DEFAULT).apply {
                 description = "Tells you when Questrade needs a new token"
             },
@@ -96,6 +101,31 @@ class Notifier @Inject constructor(@ApplicationContext private val context: Cont
         post(9001, n)
     }
 
+    /** "2 things need your attention" after an import or sync. No amounts on the lock screen. */
+    fun unusualActivity(count: Int, firstTitle: String) {
+        val pi = PendingIntent.getActivity(
+            context, 9002,
+            Intent(context, MainActivity::class.java).apply {
+                action = MainActivity.ACTION_INSIGHTS
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val title = if (count == 1) "1 thing needs your attention" else "$count things need your attention"
+        val n = NotificationCompat.Builder(context, CH_INSIGHTS)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(title)
+            .setContentText(firstTitle)
+            .setContentIntent(pi)
+            .setAutoCancel(true)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(
+                NotificationCompat.Builder(context, CH_INSIGHTS).setSmallIcon(R.drawable.ic_notification).setContentTitle(title).build(),
+            )
+            .build()
+        post(9002, n)
+    }
+
     fun cancel(reminderId: Long) = NotificationManagerCompat.from(context).cancel(notificationId(reminderId))
 
     private fun notificationId(reminderId: Long) = 1000 + reminderId.toInt()
@@ -112,6 +142,7 @@ class Notifier @Inject constructor(@ApplicationContext private val context: Cont
     companion object {
         const val CH_REMINDERS = "statement_reminders"
         const val CH_QUESTRADE = "questrade"
+        const val CH_INSIGHTS = "insights"
         const val TEST_ID = 999L
     }
 }

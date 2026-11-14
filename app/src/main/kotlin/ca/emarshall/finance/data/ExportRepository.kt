@@ -47,6 +47,7 @@ class ExportRepository @Inject constructor(
     private val secrets: SecretStore,
     private val categories: CategoryRepository,
     private val reminders: ReminderScheduler,
+    private val statementFiles: ca.emarshall.finance.statements.StatementFileStore,
 ) {
     /** The Markdown report for pasting into Claude. Nicknames only; numbers masked. */
     suspend fun summaryMarkdown(months: Int): String = withContext(Dispatchers.Default) {
@@ -136,12 +137,13 @@ class ExportRepository @Inject constructor(
         json.toString()
     }
 
-    /** Deletes every transaction, account, setting and token, then restores the default categories. */
+    /** Deletes every transaction, account, statement file, goal, setting, token and API key, then restores the default categories. */
     suspend fun deleteAll() = withContext(Dispatchers.IO) {
         reminders.cancelAll()
         QuestradeSyncWorker.cancel(context)
         db.clearAllTables()
-        secrets.clear()
+        statementFiles.deleteAll()
+        secrets.clearAll()
         settings.clearAll()
         categories.ensureSeeded()
     }

@@ -16,6 +16,7 @@ import ca.emarshall.finance.data.DetectedFile
 import ca.emarshall.finance.data.ImportPreview
 import ca.emarshall.finance.data.ImportRepository
 import ca.emarshall.finance.data.ImportResult
+import ca.emarshall.finance.data.QuickImportOutcome
 import ca.emarshall.finance.data.db.AccountEntity
 import ca.emarshall.finance.ui.ImportRoute
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -28,12 +29,17 @@ import javax.inject.Inject
 sealed interface ImportStep {
     data object PickFile : ImportStep
     data object Working : ImportStep
-    data class ChooseAccount(val detected: DetectedFile) : ImportStep
+    data class ChooseAccount(val detected: DetectedFile, val reason: String? = null) : ImportStep
     data class Mapping(val detected: DetectedFile, val account: AccountEntity, val profile: CsvProfile?, val header: List<String>?, val notes: List<String>, val dateOptions: List<String>) : ImportStep
     data class Preview(val preview: ImportPreview) : ImportStep
     data class Done(val result: ImportResult, val accountName: String, val undone: Boolean = false) : ImportStep
     data class Failed(val message: String) : ImportStep
+
+    /** Several files opened or shared at once, each imported straight away where possible. */
+    data class Batch(val files: List<FileOutcome>, val working: Boolean) : ImportStep
 }
+
+data class FileOutcome(val name: String, val outcome: QuickImportOutcome?, val error: String? = null)
 
 @HiltViewModel
 class ImportViewModel @Inject constructor(
@@ -47,8 +53,38 @@ class ImportViewModel @Inject constructor(
     val allAccounts = accounts.accounts.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     init {
-        if (route.uri.isNotEmpty()) onFilePicked(Uri.parse(route.uri))
+        val uris = route.uris.split("\n").filter { it.isNotBlank() }.map { Uri.parse(it) }
+        if (uris.isNotEmpty()) quickImport(uris)
     }
+
+    /**
+     * Files opened from a banking app (or shared from Files, Drive, Gmail) import straight away when the
+     * bank and account are clear and the statement reconciles; anything else goes to the review screens.
+     */
+    fun quickImport(uris: List<Uri>) = run {
+        if (uris.size == 1) {
+            step.value = ImportStep.Working
+            when (val o = imports.quickImport(uris.single())) {
+                is QuickImportOutcome.Imported -> step.value = ImportStep.Done(o.result, o.accountName)
+                is QuickImportOutcome.NeedsReview -> step.value = ImportStep.ChooseAccount(o.detected, o.reason)
+                is QuickImportOutcome.AlreadyImported ->
+                    step.value = ImportStep.Failed("Already imported: all ${o.rows} rows of this file are in ${o.accountName}.")
+            }
+            return@run
+        }
+        val results = uris.map { FileOutcome(it.lastPathSegment ?: "file", null) }.toMutableList()
+        step.value = ImportStep.Batch(results.toList(), working = true)
+        uris.forEachIndexed { i, uri ->
+            results[i] = try {
+                FileOutcome(results[i].name, imports.quickImport(uri))
+            } catch (e: Exception) {
+                FileOutcome(results[i].name, null, e.message ?: "Couldn't read this file")
+            }
+            step.value = ImportStep.Batch(results.toList(), working = i < uris.size - 1)
+        }
+    }
+
+    fun review(o: QuickImportOutcome.NeedsReview) { step.value = ImportStep.ChooseAccount(o.detected, o.reason) }
 
     fun onFilePicked(uri: Uri) = run {
         step.value = ImportStep.Working

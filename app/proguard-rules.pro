@@ -36,3 +36,7 @@
 -dontwarn javax.annotation.**
 -dontwarn com.google.api.client.**
 -dontwarn org.joda.time.**
+
+# ---- Anthropic SDK (opt-in Claude coach). The SDK ships its own keep rules (META-INF/proguard);
+# OpenTelemetry's compile-only AutoValue annotations aren't on the runtime classpath. ----
+-dontwarn com.google.auto.value.**

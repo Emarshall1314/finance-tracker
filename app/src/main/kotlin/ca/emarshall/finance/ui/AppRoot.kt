@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.automirrored.filled.ShowChart
@@ -48,6 +49,12 @@ import ca.emarshall.finance.ui.reminders.RemindersScreen
 import ca.emarshall.finance.ui.settings.SecurityScreen
 import ca.emarshall.finance.ui.settings.SettingsScreen
 import ca.emarshall.finance.ui.summary.SummaryScreen
+import ca.emarshall.finance.ui.insights.ClaudeChatScreen
+import ca.emarshall.finance.ui.insights.ClaudeSetupScreen
+import ca.emarshall.finance.ui.insights.GoalEditScreen
+import ca.emarshall.finance.ui.insights.InsightsScreen
+import ca.emarshall.finance.ui.statements.StatementViewerScreen
+import ca.emarshall.finance.ui.statements.StatementsScreen
 import ca.emarshall.finance.ui.transactions.TransactionDetailScreen
 import ca.emarshall.finance.ui.transactions.TransactionsScreen
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -62,7 +69,8 @@ import kotlin.reflect.KClass
 @Serializable data class TransactionRoute(val id: Long)
 @Serializable object AccountsRoute
 @Serializable data class AccountEditRoute(val id: Long = -1)
-@Serializable data class ImportRoute(val accountId: Long = -1, val uri: String = "")
+/** [uris] is newline-separated: files opened or shared from another app, imported straight away. */
+@Serializable data class ImportRoute(val accountId: Long = -1, val uris: String = "")
 @Serializable object ImportHistoryRoute
 @Serializable object BillsRoute
 @Serializable object QuestradeRoute
@@ -70,11 +78,18 @@ import kotlin.reflect.KClass
 @Serializable object SummaryRoute
 @Serializable object CategoriesRoute
 @Serializable object SecurityRoute
+@Serializable object InsightsRoute
+@Serializable object StatementsRoute
+@Serializable data class StatementViewerRoute(val batchId: Long, val title: String)
+@Serializable data class GoalEditRoute(val id: Long = -1)
+@Serializable data class ClaudeChatRoute(val prompt: String = "")
+@Serializable object ClaudeSetupRoute
 
 sealed interface PendingNav {
-    data class ImportFile(val uri: String) : PendingNav
+    data class ImportFiles(val uris: List<String>) : PendingNav
     data class ImportForAccount(val accountId: Long) : PendingNav
     data object Questrade : PendingNav
+    data object Insights : PendingNav
 }
 
 private data class Tab(val label: String, val icon: ImageVector, val route: Any, val routeClass: KClass<*>)
@@ -82,6 +97,7 @@ private data class Tab(val label: String, val icon: ImageVector, val route: Any,
 private val TABS = listOf(
     Tab("Overview", Icons.Default.Dashboard, OverviewRoute, OverviewRoute::class),
     Tab("Transactions", Icons.AutoMirrored.Filled.ReceiptLong, TransactionsRoute(), TransactionsRoute::class),
+    Tab("Insights", Icons.Default.Lightbulb, InsightsRoute, InsightsRoute::class),
     Tab("Investments", Icons.AutoMirrored.Filled.ShowChart, InvestmentsRoute, InvestmentsRoute::class),
     Tab("Settings", Icons.Default.Settings, SettingsRoute, SettingsRoute::class),
 )
@@ -103,9 +119,10 @@ fun AppRoot(
     val pending by pendingNav.collectAsStateWithLifecycle()
     LaunchedEffect(pending) {
         when (val p = pending) {
-            is PendingNav.ImportFile -> nav.navigate(ImportRoute(uri = p.uri))
+            is PendingNav.ImportFiles -> nav.navigate(ImportRoute(uris = p.uris.joinToString("\n")))
             is PendingNav.ImportForAccount -> nav.navigate(ImportRoute(accountId = p.accountId))
             PendingNav.Questrade -> nav.navigate(QuestradeRoute)
+            PendingNav.Insights -> nav.navigate(InsightsRoute) { launchSingleTop = true }
             null -> Unit
         }
         if (pending != null) pendingNav.value = null
@@ -153,6 +170,12 @@ fun AppRoot(
             composable<SummaryRoute> { SummaryScreen(nav) }
             composable<CategoriesRoute> { CategoriesScreen(nav) }
             composable<SecurityRoute> { SecurityScreen(nav) }
+            composable<InsightsRoute> { InsightsScreen(nav) }
+            composable<StatementsRoute> { StatementsScreen(nav) }
+            composable<StatementViewerRoute> { StatementViewerScreen(nav, it.toRoute<StatementViewerRoute>()) }
+            composable<GoalEditRoute> { GoalEditScreen(nav) }
+            composable<ClaudeChatRoute> { ClaudeChatScreen(nav) }
+            composable<ClaudeSetupRoute> { ClaudeSetupScreen(nav) }
         }
     }
 }
