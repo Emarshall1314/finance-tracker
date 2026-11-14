@@ -1,0 +1,37 @@
+Statement Period Dec 16, 2025 - Jan 15, 2026
+Statement Date Jan 15, 2026
+Account # 4500 XXXX XXXX 0001
+Page 1 of 4
+100 EXAMPLE ST Scotia Momentum®
+VANCOUVER BRITISH COLUMBIA V0V 0V0
+Visa Infinite Card
+MR ALEX SAMPLE
+Due This Statement
+Payment Due Date Feb 5, 2026
+Total Minimum Payment $10.00
+New Balance = $185.66
+Account Summary
+Previous balance, Dec 15/25 $100.00
+Interest + $1.23
+Payments/credits - $100.00
+Purchases/charges + $184.43
+Account Balance = $185.66
+Scotia Momentum Cash Back Summary
+Previous Balance + $40.17
+Earned this statement period + $5.64
+Transactions since your last statement
+TRANS. POST
+REF.# DATE DATE DETAILS AMOUNT($)
+MR ALEX SAMPLE - 4500 XXXX XXXX 0001
+001 Dec 15 Dec 16 EXAMPLE HARDWARE         VANCOUVER    BC 45.10
+002 Dec 20 Dec 22 UBER CANADA/UBERTRIP     TORONTO      ON 12.34
+003 Dec 28 Dec 29 CITY OF NORTH VANCOUVER  NORTH 110.00
+VANCOUVBC
+004 Jan 5 Jan 5 SCOTIABANK TRANSIT 10520 VANCOUVER    BC 100.00-
+005 Jan 10 Jan 12 NETFLIX.COM              844-505-2993 BC 16.99
+006 Jan 15 Jan 15 INTEREST CHARGES-PURCHASE 1.23
+SUB-TOTAL CREDITS - 4500 XXXX XXXX 0001 $100.00-
+SUB-TOTAL DEBITS - 4500 XXXX XXXX 0001 $185.66
+Statement Period Dec 16, 2025 - Jan 15, 2026
+Statement Date Jan 15, 2026
+Page 2 of 4

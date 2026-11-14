@@ -1,0 +1,58 @@
+----
+|
+00000
+100 EXAMPLE ST
+VANCOUVER BRITISH COLUMBIA V0V 0V0
+SBSAV00000_0000000_013 E D 00000 00000
+MR ALEX SAMPLE
+1 SAMPLE AVE Your account number:
+VANCOUVER BC 12345 00000 99
+V0V 0V0
+Questions?
+Call 1 800 4-SCOTIA
+For online account access:
+Your Preferred Package account summary www.scotiabank.com
+Opening Balance on January 1, 2026 $1,000.00
+Minus total withdrawals $679.75
+Plus total deposits $2,095.00
+Closing Balance on January 31, 2026 $2,415.25
+Here's what happened in your account this statement period
+Amounts Amounts
+Date Transactions withdrawn ($) deposited ($) Balance ($)
+Jan 1 Opening Balance 1,000.00
+Dec 31 Point of sale purchase 25.00 975.00
+Fpos Save ON Foods #1111 Vancouver BCCA
+Jan 2 IO Transfer to 200.00 775.00
+Inv 000000999999999
+Jan 2 INTERAC ABM fee 0.00 775.00
+Jan 5 Payroll dep. 2,000.00 2,775.00
+Example Employer Ltd
+Jan 6 Point of sale purchase 4.50 2,770.50 Take steps towards protecting
+Fpos Tim Hortons #1234 Vancouver BCCA your family from the
+Jan 6 Withdrawal 50.00 2,720.50 unexpected. Example Insurance
+12345678 Free Interac E-Transfer offers personalized coverage
+continued on next page
+Page 1 of 2
+SBSAV00000_0000000_013 - 0000000 HRI - - 02 - 02 - 25 - - 000001 *22P000000*
+----
+|
+MR ALEX SAMPLE
+Your Preferred Package account
+January 1 to January 31, 2026 12345 00000 99
+Here's what happened in your account (continued)
+Amounts Amounts
+Date Transactions withdrawn ($) deposited ($) Balance ($)
+Jan 9 Credit Card/LOC payment 300.00 2,420.50
+Main and Example Vancouver British Columbia
+Jan 12 Point of sale purchase 20.00 2,400.50
+Fpos Chv12345 Canyon
+Jan 12 Error correction 20.00 2,420.50
+Fpos Chv12345 Canyon Chevnorth Vancobcca
+Jan 15 Deposit 75.00 2,495.50
+87654321 Free Interac E-Transfer
+Jan 20 Hydro bill 80.25 2,415.25
+B.C. Hydro & Power Authority
+Jan 31 Closing Balance $2,415.25
+000002
+SBSAV00000_0000000_013 - 0000000
+Page 2 of 2
