@@ -243,3 +243,23 @@ Token handling:
 ## Not in scope for now
 
 iOS, web, cloud sync, multiple users, budgets, automatic bank connections, trading, in-app AI, and publishing on the Play Store.
+
+---
+
+## Amendments (November 14, 2026)
+
+Requested by the owner after the first build:
+
+1. **Open with from banking apps.** When a banking app shows a statement and asks which app to open it
+   with, Finance Tracker is offered (VIEW/SEND/SEND_MULTIPLE for PDF, CSV and OFX types). Choosing it
+   imports the statement straight away when the bank and account are clear and the statement reconciles;
+   anything uncertain goes to the review screens. Imported files are kept, encrypted, in a statement library.
+2. **Missing statements.** The app infers each account's statement cycle and lists statements that should be
+   available but haven't been imported (Overview, Insights, and the statement library).
+3. **Claude coach, unusual activity and goals.**
+   - Unusual-activity warnings and goal tracking run on the phone (no network) and notify after imports.
+   - An **opt-in** Claude coach (monthly check-in with goal suggestions, and chat) uses the owner's own
+     Anthropic API key and the official Anthropic Java SDK. It sends only the privacy-filtered summary
+     (nicknames, masked numbers) and only when the owner taps a Claude button.
+   - This replaces "in-app AI" in *Not in scope*, and adds one exception to rule 3: while the coach is turned
+     on, the app may also talk to `api.anthropic.com`. It is off by default.

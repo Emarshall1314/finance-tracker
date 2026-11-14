@@ -27,6 +27,17 @@ for what each bank's files look like.
 - **Investments**: Questrade equity, cash, holdings and allocation, dividends, and deposits per account
   this year (for watching TFSA/RRSP/FHSA contributions — room is not calculated).
 - **Statement reminders** a few days after each statement closes, with "Import now" and "Snooze 2 days".
+- **Open with from your banking app**: when a banking app shows a statement and asks which app to open it
+  with, pick Finance Tracker. It's imported straight away (or shown for a quick check if anything's unclear)
+  and kept, encrypted, in the **statement library**, where you can view it in the app.
+- **Missing statements**: the app learns each account's statement cycle and tells you which statements are
+  out but not imported yet.
+- **Insights** (on the phone, no network): unusually large or first-time charges, possible double charges,
+  subscription price rises and new subscriptions, category spikes, interest and fees, overdrafts, months you
+  spent more than you earned, late paycheques. You get a notification when an import turns up something new.
+- **Goals**: save an amount by a date, keep a category under a monthly limit, or hit a savings rate.
+- **Claude coach (optional, off by default)**: a monthly check-in with feedback and one-tap goal
+  suggestions, and a chat for questions about your money. See below.
 - **Summary for Claude**: a Markdown report (nicknames only, no account numbers) to share or copy.
 - **Export** transactions as CSV, or all data as a JSON backup. **Delete all data** in Settings.
 
@@ -87,6 +98,19 @@ The app swaps it for a session, stores the rotating refresh token encrypted on t
 a day so the connection never goes stale. If Questrade ever rejects it, you get a notification to
 reconnect with a new token.
 
+## Claude coach (optional)
+
+**Insights → Set up Claude coach**, or **Settings → Claude coach**.
+
+- You need your own Anthropic API key (console.anthropic.com → API keys). API use is billed to that account;
+  a check-in costs a few cents. A claude.ai subscription doesn't include API use.
+- When you tap **Monthly check-in** or send a question, the app sends Anthropic the same privacy-filtered
+  summary as "Share summary" (nicknames, monthly totals, categories, merchants, bills, balances, holdings),
+  plus flagged items, goals and missing statements. Account and card numbers are never included. The setup
+  screen shows exactly what's sent. Nothing is sent in the background.
+- Uses Claude Opus 5.5 through the official Anthropic Java SDK. Each answer shows its approximate cost.
+- Turning it off deletes the key from the phone. Chats are kept in memory only.
+
 ## Building
 
 Requires JDK 17+ (21 recommended) and the Android SDK (API 37). Android Studio provides both.
@@ -144,7 +168,11 @@ repo:
 - **Storage:** Room database encrypted with SQLCipher. Its random passphrase, and the Questrade tokens,
   are encrypted with Google Tink (AES-256-GCM) whose key lives in the Android Keystore.
 - **Network:** an OkHttp interceptor refuses every host except `login.questrade.com` and
-  `apiNN.iq.questrade.com`; cleartext HTTP is disabled. There are no other network libraries.
+  `apiNN.iq.questrade.com`; cleartext HTTP is disabled. The only other network library is the official
+  Anthropic SDK, used solely by the opt-in Claude coach to reach `api.anthropic.com` when you tap a Claude
+  button.
+- **Statement library:** imported files are encrypted with the same Keystore-backed key and kept in
+  no-backup storage; the viewer decrypts to a private temp file only while it's open.
 - **Backups:** `allowBackup=false` and data-extraction rules exclude everything from cloud backup and
   device transfer, so the Keystore-bound data never leaves the phone.
 - **Screen:** app lock (fingerprint/face/screen lock) on launch and after 5 minutes in the background,

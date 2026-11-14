@@ -9,8 +9,11 @@ A private, single-user Android app that tracks one person's money (BC, Canada; C
    scraping, no bank logins, no aggregators.
 2. **Questrade is read-only.** Read permissions only. Never add code that places, changes or cancels orders.
 3. **Everything stays on the phone.** No backend, no cloud sync, no analytics / crash reporting / ads /
-   tracking SDKs. The only network traffic is to Questrade's login and API servers, enforced by
-   `AllowedHostsInterceptor` (app/.../net). Don't loosen it.
+   tracking SDKs. Network traffic goes only to Questrade's login and API servers (enforced by
+   `AllowedHostsInterceptor`, app/.../net) and — **only when the user has turned on the opt-in Claude
+   coach** — to `api.anthropic.com` through the official Anthropic SDK (`app/.../claude`). Claude only ever
+   receives `ClaudeRepository.context()` (the privacy-filtered summary the consent screen previews), only
+   on an explicit tap; never in the background. Don't loosen any of this. (Owner amendment, docs/SPEC.md.)
 4. **No real financial data in git.** Real exports live in `samples/` (gitignored). Tests use synthetic
    fixtures under `core/src/test/resources/fixtures/` that copy the *structure* only, with made-up rows.
    Never commit tokens, account numbers, statements or screenshots of real data.
@@ -31,7 +34,10 @@ A private, single-user Android app that tracks one person's money (BC, Canada; C
   `java.math`, `java.security.MessageDigest`. Avoid JDK 9+ only methods (e.g. `InputStream.readAllBytes`,
   `String.repeat` from Java, `HexFormat`).
 - `app/` — Android: Compose UI, Room + SQLCipher, DataStore + Tink secrets, Questrade client, WorkManager
-  jobs, notifications, file import (SAF + share/open-with), PdfBox text extraction, Hilt DI.
+  jobs, notifications, file import (SAF + share/open-with, quick import), encrypted statement library,
+  PdfBox text extraction, opt-in Claude coach (`claude/`), Hilt DI.
+- `core/` also holds missing-statement detection (`statements/`), unusual-activity insights (`insights/`) and
+  goal progress (`goals/`) — all offline and deterministic.
 
 ## Conventions
 
@@ -50,6 +56,9 @@ A private, single-user Android app that tracks one person's money (BC, Canada; C
 ./gradlew lintDebug                  # Android lint
 ./gradlew assembleDebug              # debug APK -> app/build/outputs/apk/debug/
 ```
+
+Claude API code: model `claude-opus-5-5`, server-side refusal fallback on, cached financial-data block.
+Tests use MockWebServer only (`ClaudeCoachTest`); never call the real API from tests.
 
 Snapshot test for the summary export: `UPDATE_SNAPSHOTS=true ./gradlew :core:test` rewrites
 `core/src/test/resources/snapshots/summary.md`; review the diff before committing.
