@@ -1,6 +1,9 @@
 package ca.emarshall.finance.core
 
 import ca.emarshall.finance.core.statement.StatementTextParser
+import ca.emarshall.finance.core.statements.CoveredRange
+import ca.emarshall.finance.core.statements.StatementCoverage
+import java.time.LocalDate
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
@@ -35,5 +38,16 @@ class RealStatementsCheck {
             )
         }
         assertTrue("$failures of ${files.size} statements didn't parse cleanly", failures == 0)
+
+        // Missing-statement check per account (layout + last 4), as of a date given or today.
+        val today = System.getenv("STATEMENT_CHECK_DATE")?.let(LocalDate::parse) ?: LocalDate.now()
+        files.map { StatementTextParser.parse(it.readText()) }
+            .groupBy { "${it.hint.institution}/${it.hint.accountType}/${it.hint.last4}" }
+            .forEach { (account, sts) ->
+                val ranges = sts.mapNotNull { st -> if (st.periodStart != null && st.periodEnd != null) CoveredRange(st.periodStart!!, st.periodEnd!!) else null }
+                val closing = StatementCoverage.inferClosingDay(ranges.map { it.end }) ?: 31
+                val missing = StatementCoverage.missing(ranges, closing, today)
+                println("COVERAGE ${account.substringBeforeLast('/')} statements=${sts.size} closingDay=$closing missing=${missing.map { it.periodEnd }}")
+            }
     }
 }
