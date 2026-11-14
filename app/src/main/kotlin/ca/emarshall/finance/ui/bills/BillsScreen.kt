@@ -1,0 +1,63 @@
+package ca.emarshall.finance.ui.bills
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewModelScope
+import androidx.navigation.NavController
+import ca.emarshall.finance.core.money.Money
+import ca.emarshall.finance.core.recurring.RecurringSeries
+import ca.emarshall.finance.data.TransactionRepository
+import ca.emarshall.finance.ui.BackTopBar
+import ca.emarshall.finance.ui.EmptyState
+import ca.emarshall.finance.ui.LabeledRow
+import ca.emarshall.finance.ui.MoneyText
+import ca.emarshall.finance.ui.SectionCard
+import ca.emarshall.finance.ui.pretty
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import java.time.LocalDate
+import javax.inject.Inject
+
+@HiltViewModel
+class BillsViewModel @Inject constructor(tx: TransactionRepository) : ViewModel() {
+    val bills = tx.rows.map { tx.recurring(it, LocalDate.now()) }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+}
+
+@Composable
+fun BillsScreen(nav: NavController, vm: BillsViewModel = hiltViewModel()) {
+    val bills by vm.bills.collectAsStateWithLifecycle()
+    Column(Modifier.fillMaxSize()) {
+        BackTopBar("Bills & subscriptions", onBack = { nav.popBackStack() })
+        val list: List<RecurringSeries> = bills ?: return@Column
+        if (list.isEmpty()) {
+            EmptyState("Nothing recurring yet. A charge shows up here after the same merchant charges a similar amount about monthly, 3 times.")
+            return@Column
+        }
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            val total = list.filter { it.currency == "CAD" }.sumOf { it.monthlyCostCents }
+            Text("About ${Money.format(total)} a month", style = MaterialTheme.typography.headlineSmall)
+            list.forEach { b ->
+                SectionCard(b.merchant) {
+                    LabeledRow("Monthly cost") { MoneyText(b.typicalAmountCents, b.currency, colored = false) }
+                    LabeledRow("Next expected") { Text(b.nextExpected.pretty()) }
+                    LabeledRow("Seen") { Text("${b.occurrences} times, last ${b.lastDate.pretty()}") }
+                }
+            }
+        }
+    }
+}

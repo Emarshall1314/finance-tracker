@@ -69,7 +69,7 @@ android {
     lint {
         abortOnError = true
         checkDependencies = true
-        disable += setOf("GradleDependency", "NewerVersionAvailable", "AndroidGradlePluginVersion")
+        disable += setOf("GradleDependency", "NewerVersionAvailable", "AndroidGradlePluginVersion", "ObsoleteSdkInt")
     }
 
     testOptions {

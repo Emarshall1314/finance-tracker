@@ -1,0 +1,84 @@
+package ca.emarshall.finance.data
+
+import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.preferencesDataStore
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import javax.inject.Inject
+import javax.inject.Singleton
+
+private val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
+
+enum class QuestradeStatus { NOT_CONNECTED, CONNECTED, DISCONNECTED }
+
+data class AppSettings(
+    val lockTimeoutMinutes: Int = 5,
+    val blockScreenshots: Boolean = true,
+    val questradeStatus: QuestradeStatus = QuestradeStatus.NOT_CONNECTED,
+    val questradeLastSyncMillis: Long = 0L,
+    val questradeMessage: String? = null,
+    val generalReminderEnabled: Boolean = false,
+    val generalReminderDay: Int = 3,
+    val generalReminderMinutes: Int = 9 * 60,
+    val checklistDismissed: Boolean = false,
+)
+
+/** Non-secret preferences. Secrets live in [ca.emarshall.finance.security.SecretStore]. */
+@Singleton
+class SettingsRepository @Inject constructor(@ApplicationContext private val context: Context) {
+    private val ds get() = context.settingsDataStore
+
+    val settings: Flow<AppSettings> = ds.data.map { p ->
+        AppSettings(
+            lockTimeoutMinutes = p[LOCK_TIMEOUT] ?: 5,
+            blockScreenshots = p[BLOCK_SCREENSHOTS] ?: true,
+            questradeStatus = p[QT_STATUS]?.let { runCatching { QuestradeStatus.valueOf(it) }.getOrNull() } ?: QuestradeStatus.NOT_CONNECTED,
+            questradeLastSyncMillis = p[QT_LAST_SYNC] ?: 0L,
+            questradeMessage = p[QT_MESSAGE],
+            generalReminderEnabled = p[GEN_ENABLED] ?: false,
+            generalReminderDay = p[GEN_DAY] ?: 3,
+            generalReminderMinutes = p[GEN_MINUTES] ?: 9 * 60,
+            checklistDismissed = p[CHECKLIST_DISMISSED] ?: false,
+        )
+    }
+
+    suspend fun current(): AppSettings = settings.first()
+
+    suspend fun setLockTimeout(minutes: Int) = ds.edit { it[LOCK_TIMEOUT] = minutes }
+    suspend fun setBlockScreenshots(on: Boolean) = ds.edit { it[BLOCK_SCREENSHOTS] = on }
+    suspend fun setChecklistDismissed(on: Boolean) = ds.edit { it[CHECKLIST_DISMISSED] = on }
+
+    suspend fun setQuestradeStatus(status: QuestradeStatus, message: String? = null) = ds.edit {
+        it[QT_STATUS] = status.name
+        if (message == null) it.remove(QT_MESSAGE) else it[QT_MESSAGE] = message
+    }
+
+    suspend fun setQuestradeLastSync(millis: Long) = ds.edit { it[QT_LAST_SYNC] = millis }
+
+    suspend fun setGeneralReminder(enabled: Boolean, day: Int, minutes: Int) = ds.edit {
+        it[GEN_ENABLED] = enabled; it[GEN_DAY] = day; it[GEN_MINUTES] = minutes
+    }
+
+    suspend fun clearAll() = ds.edit { it.clear() }
+
+    private companion object {
+        val LOCK_TIMEOUT = intPreferencesKey("lock_timeout_minutes")
+        val BLOCK_SCREENSHOTS = booleanPreferencesKey("block_screenshots")
+        val QT_STATUS = stringPreferencesKey("questrade_status")
+        val QT_LAST_SYNC = longPreferencesKey("questrade_last_sync")
+        val QT_MESSAGE = stringPreferencesKey("questrade_message")
+        val GEN_ENABLED = booleanPreferencesKey("general_reminder_enabled")
+        val GEN_DAY = intPreferencesKey("general_reminder_day")
+        val GEN_MINUTES = intPreferencesKey("general_reminder_minutes")
+        val CHECKLIST_DISMISSED = booleanPreferencesKey("checklist_dismissed")
+    }
+}
