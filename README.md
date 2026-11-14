@@ -1,15 +1,134 @@
 # Finance Tracker
 
 A private, single-user Android app that tracks one person's money in British Columbia, Canada:
-Scotiabank and Canadian Tire Bank (Triangle Mastercard) statements imported as files, and Questrade
-investments over Questrade's official read-only API.
+Scotiabank (chequing and Scotia Visa) and Canadian Tire Bank (Triangle Mastercard) statements
+imported as files, and Questrade investments over Questrade's official **read-only** API.
 
-**Privacy by design:** no bank logins, no backend, no cloud sync, no analytics. Everything stays on the
-phone in an encrypted database (SQLCipher, key protected by the Android Keystore via Tink). The only
-network traffic is to Questrade's login and API servers.
+**Privacy by design:** no bank logins, no backend, no cloud sync, no analytics, crash-reporting or ad
+SDKs. Everything stays on the phone in an encrypted database. The only network traffic is to
+Questrade's login and API servers.
 
-> Status: in development. See [docs/SPEC.md](docs/SPEC.md) for the full spec and milestones, and
-> [docs/IMPORT_FORMATS.md](docs/IMPORT_FORMATS.md) for what each bank's files look like.
+See [docs/SPEC.md](docs/SPEC.md) for the full spec and [docs/IMPORT_FORMATS.md](docs/IMPORT_FORMATS.md)
+for what each bank's files look like.
+
+## What it does
+
+- **Import** PDF e-statements (Scotiabank chequing, Scotia Visa, Triangle Mastercard), CSV downloads
+  (with a column-mapping screen for new layouts) and OFX/QFX/QBO files. Share a file to the app from
+  Files, Drive or Gmail, or pick one in the app. Duplicates are skipped; every import can be undone.
+  PDF statements are checked against their own opening/closing totals.
+- **Categorise** automatically with rules for common BC and Canadian merchants. Recategorise a
+  transaction and choose "Always do this for <merchant>" to teach it.
+- **Transfers** between your own accounts (card payments, deposits to Questrade) are paired and never
+  counted as income or spending.
+- **Bills & subscriptions**: recurring monthly charges with their cost and next date.
+- **Overview**: income, spending, net saved and savings rate per month; spending by category; 12-month
+  chart; top merchants; fees and interest; upcoming bills; net worth with a trend; data freshness.
+- **Investments**: Questrade equity, cash, holdings and allocation, dividends, and deposits per account
+  this year (for watching TFSA/RRSP/FHSA contributions — room is not calculated).
+- **Statement reminders** a few days after each statement closes, with "Import now" and "Snooze 2 days".
+- **Summary for Claude**: a Markdown report (nicknames only, no account numbers) to share or copy.
+- **Export** transactions as CSV, or all data as a JSON backup. **Delete all data** in Settings.
+
+## Install on your phone
+
+### Option 1: download the build from GitHub (no tools needed)
+
+1. On GitHub, open the repo → **Actions** → the latest green **CI** run → **Artifacts** →
+   download **finance-tracker-debug-apk** (a zip). Unzip it to get `app-debug.apk`.
+2. Copy `app-debug.apk` to the phone (USB, Google Drive, or email it to yourself).
+3. On the phone, open it from Files. Android asks to allow installs from that app ("Install unknown
+   apps") — allow it for Files/Drive, then tap **Install**.
+
+### Option 2: USB with adb
+
+1. On the phone: **Settings → About phone →** tap **Build number** 7 times, then **Settings → System →
+   Developer options → USB debugging** on.
+2. Connect the phone by USB and accept the "Allow USB debugging?" prompt.
+3. On the computer (in the project folder):
+
+   ```bash
+   ./gradlew assembleDebug
+   ```
+
+   ```bash
+   adb install -r app/build/outputs/apk/debug/app-debug.apk
+   ```
+
+   On Windows use `gradlew.bat assembleDebug` and the same `adb install` line.
+
+The debug build installs as **Finance Tracker** with the package `ca.emarshall.finance.debug`, so it can
+sit next to a release build.
+
+## Getting your statements
+
+The app never logs in to your bank. Download files on a computer (or phone browser) and share them to
+the app.
+
+- **Scotiabank chequing** — Scotia OnLine → your account → **Statements** (e-statements) → download the
+  PDF. Or **Download Transactions** → CSV.
+- **Scotia Visa** — Scotia OnLine → the card → **Statements** → download the PDF.
+- **Triangle Mastercard** — triangle.com/account → **Statements** → download the PDF.
+
+PDF statements are the format verified against real files; CSV and OFX downloads are supported but were
+only tested with synthetic files so far.
+
+## Connecting Questrade (read-only)
+
+In the app: **Investments → Connect** walks you through it.
+
+1. Sign in to Questrade on the web → **App Hub / API Centre** → turn on API access.
+2. **Register a personal app.** Tick **only the read permissions** (account data and market data). Never
+   tick trading permissions — the app has no code that can trade anyway.
+3. Under the app, **New manual authorization → Generate new token**. Copy it.
+4. Paste it in the app straight away (tokens work once and expire 7 days after they're created).
+
+The app swaps it for a session, stores the rotating refresh token encrypted on the phone, and syncs once
+a day so the connection never goes stale. If Questrade ever rejects it, you get a notification to
+reconnect with a new token.
+
+## Building
+
+Requires JDK 17+ (21 recommended) and the Android SDK (API 37). Android Studio provides both.
+
+```bash
+./gradlew testDebugUnitTest
+```
+
+```bash
+./gradlew lintDebug assembleDebug
+```
+
+CI (GitHub Actions) runs unit tests, lint, a debug build and a gitleaks secret scan on every push, and
+uploads the debug APK as an artifact.
+
+### Release build
+
+Release builds are minified with R8 and strip all logging. Signing uses a keystore kept **outside** the
+repo:
+
+1. Create a keystore once (keep it and its passwords safe; losing it means you can't update the app):
+
+   ```bash
+   keytool -genkeypair -v -keystore ~/finance-release.jks -keyalg RSA -keysize 4096 -validity 10000 -alias finance
+   ```
+
+2. Create `keystore.properties` in the project root (gitignored):
+
+   ```properties
+   storeFile=/home/you/finance-release.jks
+   storePassword=...
+   keyAlias=finance
+   keyPassword=...
+   ```
+
+3. Build:
+
+   ```bash
+   ./gradlew assembleRelease
+   ```
+
+   The signed APK is in `app/build/outputs/apk/release/`.
 
 ## Project layout
 
@@ -20,19 +139,17 @@ network traffic is to Questrade's login and API servers.
 | `docs/` | Spec and import-format notes |
 | `samples/` | Your real exports, for local testing only. **Gitignored; never committed.** |
 
-## Building
+## Privacy notes
 
-Requires JDK 17+ (21 recommended) and the Android SDK (API 37). Android Studio provides both.
-
-```bash
-./gradlew testDebugUnitTest     # all unit tests
-./gradlew assembleDebug         # app/build/outputs/apk/debug/app-debug.apk
-```
-
-On Windows use `gradlew.bat` instead of `./gradlew`.
-
-CI (GitHub Actions) runs lint, unit tests, a debug build and a gitleaks secret scan on every push, and
-uploads the debug APK as a build artifact.
-
-More sections (installing on a phone, connecting Questrade, exporting from each bank) are added as
-those milestones land.
+- **Storage:** Room database encrypted with SQLCipher. Its random passphrase, and the Questrade tokens,
+  are encrypted with Google Tink (AES-256-GCM) whose key lives in the Android Keystore.
+- **Network:** an OkHttp interceptor refuses every host except `login.questrade.com` and
+  `apiNN.iq.questrade.com`; cleartext HTTP is disabled. There are no other network libraries.
+- **Backups:** `allowBackup=false` and data-extraction rules exclude everything from cloud backup and
+  device transfer, so the Keystore-bound data never leaves the phone.
+- **Screen:** app lock (fingerprint/face/screen lock) on launch and after 5 minutes in the background,
+  adjustable; content hidden in Recents and screenshots blocked by default.
+- **Exports** (summary, CSV, JSON backup) are plain text you choose to share — keep them private. They use
+  account nicknames, and mask long digit runs that look like account numbers.
+- **Git:** real statements belong in `samples/`, which is gitignored along with every bank file format
+  outside the test-fixture folders. Tests use synthetic fixtures only.
