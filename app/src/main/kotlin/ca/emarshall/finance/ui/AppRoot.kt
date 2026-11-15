@@ -95,10 +95,10 @@ sealed interface PendingNav {
 private data class Tab(val label: String, val icon: ImageVector, val route: Any, val routeClass: KClass<*>)
 
 private val TABS = listOf(
-    Tab("Overview", Icons.Default.Dashboard, OverviewRoute, OverviewRoute::class),
-    Tab("Transactions", Icons.AutoMirrored.Filled.ReceiptLong, TransactionsRoute(), TransactionsRoute::class),
+    Tab("Home", Icons.Default.Dashboard, OverviewRoute, OverviewRoute::class),
+    Tab("Activity", Icons.AutoMirrored.Filled.ReceiptLong, TransactionsRoute(), TransactionsRoute::class),
     Tab("Insights", Icons.Default.Lightbulb, InsightsRoute, InsightsRoute::class),
-    Tab("Investments", Icons.AutoMirrored.Filled.ShowChart, InvestmentsRoute, InvestmentsRoute::class),
+    Tab("Invest", Icons.AutoMirrored.Filled.ShowChart, InvestmentsRoute, InvestmentsRoute::class),
     Tab("Settings", Icons.Default.Settings, SettingsRoute, SettingsRoute::class),
 )
 
@@ -135,9 +135,16 @@ fun AppRoot(
     Scaffold(
         bottomBar = {
             if (showBar) {
-                NavigationBar {
+                NavigationBar(containerColor = ca.emarshall.finance.ui.theme.Fin.palette.card, tonalElevation = 0.dp) {
                     TABS.forEach { t ->
                         NavigationBarItem(
+                            colors = androidx.compose.material3.NavigationBarItemDefaults.colors(
+                                selectedIconColor = ca.emarshall.finance.ui.theme.Fin.palette.accent,
+                                selectedTextColor = ca.emarshall.finance.ui.theme.Fin.palette.accent,
+                                indicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                                unselectedIconColor = ca.emarshall.finance.ui.theme.Fin.palette.tertiaryLabel,
+                                unselectedTextColor = ca.emarshall.finance.ui.theme.Fin.palette.secondaryLabel,
+                            ),
                             selected = dest?.hasRoute(t.routeClass) == true,
                             onClick = {
                                 nav.navigate(t.route) {

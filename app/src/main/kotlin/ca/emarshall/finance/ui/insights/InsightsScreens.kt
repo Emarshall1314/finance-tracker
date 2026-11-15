@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -132,7 +133,7 @@ fun InsightsScreen(nav: NavController, vm: InsightsViewModel = hiltViewModel()) 
     val message by vm.message.collectAsStateWithLifecycle()
 
     Column(Modifier.fillMaxSize()) {
-        TopAppBar(title = { Text("Insights") })
+        Text("Insights", Modifier.statusBarsPadding().padding(start = 16.dp, top = 12.dp, bottom = 4.dp), style = MaterialTheme.typography.headlineLarge)
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             // ---- Unusual activity (on-device) ----
             SectionCard("Needs attention") {

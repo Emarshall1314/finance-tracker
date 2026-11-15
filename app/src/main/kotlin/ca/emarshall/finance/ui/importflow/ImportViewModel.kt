@@ -108,7 +108,6 @@ class ImportViewModel @Inject constructor(
         step.value = ImportStep.ChooseAccount(o.detected, o.reason)
     }
 
-    fun review(o: QuickImportOutcome.NeedsReview) { step.value = ImportStep.ChooseAccount(o.detected, o.reason) }
 
     fun onFilePicked(uri: Uri) = run {
         step.value = ImportStep.Working

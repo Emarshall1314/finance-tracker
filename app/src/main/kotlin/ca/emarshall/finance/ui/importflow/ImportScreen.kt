@@ -11,7 +11,24 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.height
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.InsertDriveFile
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.TableChart
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
+import androidx.compose.material3.LinearProgressIndicator
+import ca.emarshall.finance.ui.design.FinCard
+import ca.emarshall.finance.ui.design.Group
+import ca.emarshall.finance.ui.design.GroupRow
+import ca.emarshall.finance.ui.design.HeroCard
+import ca.emarshall.finance.ui.design.SectionHeader
+import ca.emarshall.finance.ui.theme.Fin
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -59,18 +76,30 @@ private val MIME_TYPES = arrayOf(
 fun ImportScreen(nav: NavController, vm: ImportViewModel = hiltViewModel()) {
     val step by vm.step.collectAsStateWithLifecycle()
     val accounts by vm.allAccounts.collectAsStateWithLifecycle()
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) vm.onFilePicked(uri) }
+    // Many files at once: each is imported straight away when it's clear which account it belongs to.
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        when {
+            uris.isEmpty() -> Unit
+            uris.size == 1 && vm.preselectedAccountId != null -> vm.onFilePicked(uris.single())
+            else -> vm.quickImport(uris)
+        }
+    }
+    val folder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri -> if (uri != null) vm.importFolder(uri) }
 
-    Column(Modifier.fillMaxSize()) {
-        BackTopBar("Import statement", onBack = { nav.popBackStack() })
+    Column(Modifier.fillMaxSize().background(Fin.palette.background)) {
+        BackTopBar("Import", onBack = { nav.popBackStack() }, actions = {
+            if (vm.inBatch && step !is ImportStep.Batch) TextButton(onClick = vm::backToBatch) { Text("Batch") }
+        })
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             when (val s = step) {
-                ImportStep.PickFile -> PickFile { picker.launch(MIME_TYPES) }
-                ImportStep.Working -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    CircularProgressIndicator(); Text("Reading…")
+                ImportStep.PickFile -> PickFile(onFiles = { picker.launch(MIME_TYPES) }, onFolder = { folder.launch(null) })
+                ImportStep.Working -> FinCard {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        CircularProgressIndicator(); Text("Reading…")
+                    }
                 }
                 is ImportStep.ChooseAccount -> {
                     s.reason?.let { Text("Needs a quick check: $it", color = MaterialTheme.colorScheme.error) }
@@ -91,38 +120,77 @@ fun ImportScreen(nav: NavController, vm: ImportViewModel = hiltViewModel()) {
 
 @Composable
 private fun BatchStep(s: ImportStep.Batch, vm: ImportViewModel) {
-    Text(if (s.working) "Importing ${s.files.size} files…" else "Done", style = MaterialTheme.typography.titleLarge)
-    if (s.working) CircularProgressIndicator()
-    s.files.forEach { f ->
-        SectionCard(f.name) {
-            when (val o = f.outcome) {
-                null -> Text(f.error ?: "Waiting…", color = if (f.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
-                is QuickImportOutcome.Imported -> Text("Imported ${o.result.newCount} transactions into ${o.accountName}" +
-                    if (o.result.duplicateCount > 0) " (${o.result.duplicateCount} already there)" else "")
-                is QuickImportOutcome.AlreadyImported -> Text("Already imported into ${o.accountName}.")
-                is QuickImportOutcome.NeedsReview -> {
-                    Text(o.reason, color = MaterialTheme.colorScheme.error)
-                    OutlinedButton(onClick = { vm.review(o) }) { Text("Review") }
-                }
+    val imported = s.imported
+    val white = androidx.compose.ui.graphics.Color.White
+    HeroCard(Fin.palette.heroGradient) {
+        Text(if (s.working) "Importing…" else "Import complete", color = white.copy(alpha = 0.8f), style = MaterialTheme.typography.bodyMedium)
+        Text("${s.done} of ${s.files.size} files", color = white, style = MaterialTheme.typography.headlineMedium)
+        if (s.working) {
+            LinearProgressIndicator(
+                progress = { s.done.toFloat() / s.files.size.coerceAtLeast(1) },
+                modifier = Modifier.fillMaxWidth().padding(top = 6.dp), color = white, trackColor = white.copy(alpha = 0.25f),
+            )
+        } else {
+            Text(
+                "${imported.sumOf { it.result.newCount }} new transactions" +
+                    (s.transfersMatched?.takeIf { it > 0 }?.let { " · $it transfers matched" } ?: ""),
+                color = white, style = MaterialTheme.typography.bodyLarge,
+            )
+        }
+    }
+    if (s.needsReview.isNotEmpty() && !s.working) {
+        SectionHeader("Needs a quick check")
+        Group {
+            s.needsReview.forEachIndexed { n, (i, o) ->
+                GroupRow(
+                    s.files[i].name, subtitle = o.reason, icon = Icons.Default.Warning, iconColor = Fin.palette.warning,
+                    showChevron = true, divider = n < s.needsReview.size - 1, onClick = { vm.reviewAt(i, o) },
+                )
             }
         }
     }
+    SectionHeader("Files")
+    Group {
+        s.files.forEachIndexed { i, f ->
+            val (subtitle, icon, color) = when (val o = f.outcome) {
+                null -> Triple(f.error ?: "Waiting…", if (f.error != null) Icons.Default.ErrorOutline else Icons.Default.Schedule,
+                    if (f.error != null) Fin.palette.negative else Fin.palette.tertiaryLabel)
+                is QuickImportOutcome.Imported -> Triple(
+                    "${o.result.newCount} new in ${o.accountName}" + if (o.result.duplicateCount > 0) " · ${o.result.duplicateCount} already there" else "",
+                    Icons.Default.CheckCircle, Fin.palette.positive,
+                )
+                is QuickImportOutcome.AlreadyImported -> Triple("Already in ${o.accountName}", Icons.Default.CheckCircle, Fin.palette.tertiaryLabel)
+                is QuickImportOutcome.NeedsReview -> Triple(o.reason, Icons.Default.Warning, Fin.palette.warning)
+            }
+            GroupRow(f.name, subtitle = subtitle, icon = icon, iconColor = color, divider = i < s.files.size - 1)
+        }
+    }
+    if (!s.working) Button(onClick = { vm.restart() }, modifier = Modifier.fillMaxWidth().height(50.dp)) { Text("Import more") }
 }
 
 @Composable
-private fun PickFile(onPick: () -> Unit) {
-    Text("Import a statement or export from Scotiabank or Canadian Tire Bank.", style = MaterialTheme.typography.bodyLarge)
-    SectionCard("What works") {
-        Text("• PDF e-statements (Scotiabank chequing, Scotia Visa, Triangle Mastercard)")
-        Text("• CSV downloads, with a column-mapping screen for new layouts")
-        Text("• OFX, QFX (Quicken) and QBO (QuickBooks) downloads")
+private fun PickFile(onFiles: () -> Unit, onFolder: () -> Unit) {
+    val white = androidx.compose.ui.graphics.Color.White
+    HeroCard(Fin.palette.heroGradient) {
+        Text("Import statements", color = white, style = MaterialTheme.typography.headlineSmall)
         Text(
-            "Fastest: when your banking app shows a statement and asks which app to open it with, pick Finance Tracker. " +
-                "It's imported straight away. Sharing from Files, Drive or Gmail works too.",
-            style = MaterialTheme.typography.bodySmall,
+            "Pick as many as you like. Each goes to the right account automatically, duplicates are skipped, " +
+                "and anything unclear is set aside for a quick check.",
+            color = white.copy(alpha = 0.85f), style = MaterialTheme.typography.bodyMedium,
         )
     }
-    Button(onClick = onPick, modifier = Modifier.fillMaxWidth()) { Text("Choose a file") }
+    Button(onClick = onFiles, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("Choose files") }
+    OutlinedButton(onClick = onFolder, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("Import a whole folder") }
+    SectionHeader("Works with")
+    Group {
+        GroupRow("PDF statements", subtitle = "Scotiabank chequing, Scotia Visa, Triangle Mastercard", icon = Icons.Default.Description)
+        GroupRow("CSV downloads", subtitle = "Any bank; map the columns once", icon = Icons.Default.TableChart, iconColor = Fin.palette.chart[2])
+        GroupRow("OFX, QFX, QBO", subtitle = "Quicken and QuickBooks downloads", icon = Icons.Default.InsertDriveFile, iconColor = Fin.palette.chart[1], divider = false)
+    }
+    Text(
+        "Fastest of all: when your banking app shows a statement and asks which app to open it with, pick Finance Tracker.",
+        style = MaterialTheme.typography.bodySmall, color = Fin.palette.secondaryLabel, modifier = Modifier.padding(horizontal = 4.dp),
+    )
 }
 
 @Composable

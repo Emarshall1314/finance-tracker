@@ -19,7 +19,18 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Color
+import ca.emarshall.finance.core.money.Money
+import ca.emarshall.finance.ui.SHORT_MONTH
+import ca.emarshall.finance.ui.categoryIcon
+import ca.emarshall.finance.ui.design.Group
+import ca.emarshall.finance.ui.design.IconTile
+import ca.emarshall.finance.ui.design.LargeTitleScreen
+import ca.emarshall.finance.ui.design.Segmented
+import ca.emarshall.finance.ui.theme.Fin
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -113,7 +124,6 @@ class TransactionsViewModel @Inject constructor(
     fun update(f: (TxFilter) -> TxFilter) { filter.value = f(filter.value) }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TransactionsScreen(nav: NavController, route: TransactionsRoute, vm: TransactionsViewModel = hiltViewModel()) {
     val f by vm.filter.collectAsStateWithLifecycle()
@@ -121,16 +131,28 @@ fun TransactionsScreen(nav: NavController, route: TransactionsRoute, vm: Transac
     val accounts by vm.accounts.collectAsStateWithLifecycle()
     val categories by vm.categories.collectAsStateWithLifecycle()
     val totals by vm.totals.collectAsStateWithLifecycle()
+    val p = Fin.palette
 
-    Column(Modifier.fillMaxSize()) {
-        TopAppBar(title = { Text("Transactions") })
-        Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
+    LargeTitleScreen("Activity") {
+        item {
+            TextField(
                 value = f.query, onValueChange = { q -> vm.update { it.copy(query = q) } },
                 modifier = Modifier.fillMaxWidth(), singleLine = true,
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                label = { Text("Search merchant, description or notes") },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = p.secondaryLabel) },
+                placeholder = { Text("Search", color = p.secondaryLabel) },
+                shape = RoundedCornerShape(12.dp),
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = p.cardSecondary, unfocusedContainerColor = p.cardSecondary,
+                    focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
+                ),
             )
+        }
+        item {
+            val periods = listOfNotNull(Period.CUSTOM_MONTH.takeIf { f.month != null }, Period.THIS_MONTH, Period.LAST_3, Period.THIS_YEAR, Period.ALL)
+            Segmented(periods, f.period, { if (it == Period.CUSTOM_MONTH) f.month!!.format(SHORT_MONTH) else when (it) {
+                Period.THIS_MONTH -> "Month"; Period.LAST_3 -> "3 mo"; Period.THIS_YEAR -> "Year"; else -> "All" } }, { p2 -> vm.update { it.copy(period = p2) } })
+        }
+        item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Picker(
                     "Account", accounts.firstOrNull { it.id == f.accountId }, listOf<AccountEntity?>(null) + accounts,
@@ -141,50 +163,62 @@ fun TransactionsScreen(nav: NavController, route: TransactionsRoute, vm: Transac
                     { it?.name ?: "All categories" }, { c -> vm.update { it.copy(categoryId = c?.id) } }, Modifier.weight(1f), "All categories",
                 )
             }
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (f.month != null) {
-                    FilterChip(f.period == Period.CUSTOM_MONTH, { vm.update { it.copy(period = Period.CUSTOM_MONTH) } }, label = { Text(f.month!!.pretty()) })
-                }
-                Period.entries.filter { it != Period.CUSTOM_MONTH }.forEach { p ->
-                    FilterChip(f.period == p, { vm.update { it.copy(period = p) } }, label = { Text(p.label) })
-                }
-            }
-            Row {
-                Text("In ", style = MaterialTheme.typography.bodySmall); MoneyText(totals.first, style = MaterialTheme.typography.bodySmall)
-                Text("   Out ", style = MaterialTheme.typography.bodySmall); MoneyText(totals.second, style = MaterialTheme.typography.bodySmall)
+        }
+        item {
+            Row(Modifier.padding(horizontal = 4.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text("In ${Money.formatWhole(totals.first)}", color = p.positive, style = MaterialTheme.typography.labelLarge)
+                Text("Out ${Money.formatWhole(-totals.second)}", color = p.secondaryLabel, style = MaterialTheme.typography.labelLarge)
             }
         }
         val list = rows
         when {
             list == null -> Unit
-            list.isEmpty() -> EmptyState("No transactions match.")
-            else -> LazyColumn(Modifier.fillMaxSize()) {
-                items(list, key = { it.id }) { t ->
-                    TxListItem(t) { nav.navigate(TransactionRoute(t.id)) }
-                    HorizontalDivider()
+            list.isEmpty() -> item { EmptyState("No transactions match.") }
+            else -> list.groupBy { it.date }.forEach { (date, dayRows) ->
+                item(key = "h$date") {
+                    Text(
+                        if (date == LocalDate.now()) "Today" else if (date == LocalDate.now().minusDays(1)) "Yesterday" else date.format(DAY_HEADER),
+                        Modifier.padding(start = 4.dp, top = 4.dp), style = MaterialTheme.typography.labelLarge, color = p.secondaryLabel,
+                    )
+                }
+                item(key = "d$date") {
+                    Group {
+                        dayRows.forEachIndexed { i, t -> TxListItem(t, last = i == dayRows.size - 1) { nav.navigate(TransactionRoute(t.id)) } }
+                    }
                 }
             }
         }
     }
 }
 
+private val DAY_HEADER = java.time.format.DateTimeFormatter.ofPattern("EEEE, MMM d", java.util.Locale.CANADA)
+
 @Composable
-fun TxListItem(t: TxRow, onClick: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        if (t.transferLinkId != null) Icon(Icons.Default.SwapHoriz, contentDescription = "Transfer")
-        else ColorDot(t.categoryColor ?: 0xFF9E9E9E)
-        Column(Modifier.weight(1f)) {
-            Text(t.merchant, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+fun TxListItem(t: TxRow, last: Boolean = true, onClick: () -> Unit) {
+    val p = Fin.palette
+    Column {
+        Row(
+            Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            IconTile(
+                if (t.transferLinkId != null) Icons.Default.SwapHoriz else categoryIcon(t.categoryIcon),
+                Color((t.categoryColor ?: 0xFF8E8E93).toInt()), size = 34.dp,
+            )
+            Column(Modifier.weight(1f)) {
+                Text(t.merchant, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    "${t.categoryName ?: "Uncategorized"} · ${t.accountNickname}",
+                    style = MaterialTheme.typography.bodySmall, color = p.secondaryLabel, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+            }
             Text(
-                "${t.date.format(SHORT_DAY)} · ${t.categoryName ?: "Uncategorized"} · ${t.accountNickname}",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                (if (t.amountCents > 0) "+" else "") + Money.format(Math.abs(t.amountCents), t.currency, showCurrency = true),
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (t.amountCents > 0) p.positive else p.label,
             )
         }
-        MoneyText(t.amountCents, currency = t.currency)
+        if (!last) HorizontalDivider(Modifier.padding(start = 60.dp), color = p.separator, thickness = 0.5.dp)
     }
 }

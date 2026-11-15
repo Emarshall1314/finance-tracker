@@ -38,6 +38,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -78,30 +79,49 @@ class SettingsViewModel @Inject constructor(private val settingsRepo: SettingsRe
     fun deleteAll() = viewModelScope.launch { export.deleteAll(); deleted.value = true }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(nav: NavController, vm: SettingsViewModel = hiltViewModel()) {
     val deleted by vm.deleted.collectAsStateWithLifecycle()
     var confirm by remember { mutableStateOf(false) }
     var typed by remember { mutableStateOf("") }
-    Column(Modifier.fillMaxSize()) {
-        TopAppBar(title = { Text("Settings") })
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-            Item("Accounts", Icons.Default.AccountBalance) { nav.navigate(AccountsRoute) }
-            Item("Statements (library & missing)", Icons.Default.Description) { nav.navigate(StatementsRoute) }
-            Item("Imports (and undo)", Icons.Default.FileUpload) { nav.navigate(ImportHistoryRoute) }
-            Item("Questrade", Icons.AutoMirrored.Filled.ShowChart) { nav.navigate(QuestradeRoute) }
-            Item("Statement reminders", Icons.Default.Notifications) { nav.navigate(RemindersRoute) }
-            Item("Bills & subscriptions", Icons.Default.Autorenew) { nav.navigate(BillsRoute) }
-            Item("Categories & rules", Icons.Default.Category) { nav.navigate(CategoriesRoute) }
-            Item("Claude coach (optional)", Icons.Default.AutoAwesome) { nav.navigate(ClaudeSetupRoute) }
-            Item("Summary for Claude & export", Icons.Default.Share) { nav.navigate(SummaryRoute) }
-            Item("App lock & privacy", Icons.Default.Lock) { nav.navigate(SecurityRoute) }
-            Item("Delete all data", Icons.Default.DeleteForever) { confirm = true }
+    val p = ca.emarshall.finance.ui.theme.Fin.palette
+    ca.emarshall.finance.ui.design.LargeTitleScreen("Settings") {
+        item {
+            ca.emarshall.finance.ui.design.Group {
+                Row("Accounts", Icons.Default.AccountBalance, p.chart[0]) { nav.navigate(AccountsRoute) }
+                Row("Statements", Icons.Default.Description, Color(0xFF0A84FF), "Library and missing statements") { nav.navigate(StatementsRoute) }
+                Row("Import history", Icons.Default.FileUpload, p.chart[4], "Undo an import", last = true) { nav.navigate(ImportHistoryRoute) }
+            }
+        }
+        item {
+            ca.emarshall.finance.ui.design.Group {
+                Row("Categories & rules", Icons.Default.Category, p.chart[1]) { nav.navigate(CategoriesRoute) }
+                Row("Bills & subscriptions", Icons.Default.Autorenew, p.chart[3]) { nav.navigate(BillsRoute) }
+                Row("Statement reminders", Icons.Default.Notifications, Color(0xFFFF3B30), last = true) { nav.navigate(RemindersRoute) }
+            }
+        }
+        item {
+            ca.emarshall.finance.ui.design.Group {
+                Row("Questrade", Icons.AutoMirrored.Filled.ShowChart, p.chart[2], "Read-only") { nav.navigate(QuestradeRoute) }
+                Row("Claude coach", Icons.Default.AutoAwesome, p.chart[5], "Optional", last = true) { nav.navigate(ClaudeSetupRoute) }
+            }
+        }
+        item {
+            ca.emarshall.finance.ui.design.Group {
+                Row("Summary & export", Icons.Default.Share, Color(0xFF8E8E93)) { nav.navigate(SummaryRoute) }
+                Row("App lock & privacy", Icons.Default.Lock, Color(0xFF8E8E93), last = true) { nav.navigate(SecurityRoute) }
+            }
+        }
+        item {
+            ca.emarshall.finance.ui.design.Group {
+                ca.emarshall.finance.ui.design.GroupRow("Delete all data", icon = Icons.Default.DeleteForever, iconColor = p.negative, divider = false, onClick = { confirm = true })
+            }
+        }
+        item {
             Text(
-                "Finance Tracker ${BuildConfig.VERSION_NAME}. Your data stays on this phone, encrypted. The only network " +
-                    "connections are to Questrade (read-only) and, only if you turn on the Claude coach, to Anthropic.",
-                Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall,
+                "Finance Tracker ${BuildConfig.VERSION_NAME} · Everything stays on this phone, encrypted. Connections go only to " +
+                    "Questrade (read-only) and, if you turn on the Claude coach, to Anthropic.",
+                Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall, color = p.secondaryLabel,
             )
             if (deleted) Text("All data deleted.", Modifier.padding(16.dp), color = MaterialTheme.colorScheme.primary)
         }
@@ -112,7 +132,7 @@ fun SettingsScreen(nav: NavController, vm: SettingsViewModel = hiltViewModel()) 
             title = { Text("Delete all data?") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("This deletes every account, transaction, rule, reminder and the Questrade token from this phone. It can't be undone. Type DELETE to confirm.")
+                    Text("This deletes every account, transaction, statement, goal, reminder, the Questrade token and the Claude API key from this phone. It can't be undone. Type DELETE to confirm.")
                     OutlinedTextField(typed, { typed = it }, singleLine = true)
                 }
             },
@@ -121,6 +141,10 @@ fun SettingsScreen(nav: NavController, vm: SettingsViewModel = hiltViewModel()) 
         )
     }
 }
+
+@Composable
+private fun Row(title: String, icon: ImageVector, color: Color, subtitle: String? = null, last: Boolean = false, onClick: () -> Unit) =
+    ca.emarshall.finance.ui.design.GroupRow(title, subtitle = subtitle, icon = icon, iconColor = color, showChevron = true, divider = !last, onClick = onClick)
 
 @Composable
 private fun Item(label: String, icon: ImageVector, onClick: () -> Unit) {

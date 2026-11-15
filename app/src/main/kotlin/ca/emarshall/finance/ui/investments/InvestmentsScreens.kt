@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -102,7 +103,7 @@ fun InvestmentsScreen(nav: NavController, vm: InvestmentsViewModel = hiltViewMod
     val v by vm.view.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
     Column(Modifier.fillMaxSize()) {
-        TopAppBar(title = { Text("Investments") })
+        Text("Investments", Modifier.statusBarsPadding().padding(start = 16.dp, top = 12.dp, bottom = 4.dp), style = MaterialTheme.typography.headlineLarge)
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             val status = s?.questradeStatus ?: return@Column
             if (status != QuestradeStatus.CONNECTED) {
@@ -118,7 +119,12 @@ fun InvestmentsScreen(nav: NavController, vm: InvestmentsViewModel = hiltViewMod
 
 @Composable
 private fun InvestmentsContent(v: InvestmentsView, busy: Boolean, onSync: () -> Unit) {
-    StatTile("Total equity (CAD, combined)", Money.format(v.totalEquityCadCents), Modifier.fillMaxWidth())
+    ca.emarshall.finance.ui.design.HeroCard(ca.emarshall.finance.ui.theme.Fin.palette.investGradient) {
+        val white = androidx.compose.ui.graphics.Color.White
+        Text("Total equity", color = white.copy(alpha = 0.8f), style = MaterialTheme.typography.bodyMedium)
+        Text(Money.formatWhole(v.totalEquityCadCents), color = white, style = MaterialTheme.typography.headlineLarge)
+        Text("Dividends this year ${Money.formatWhole(v.dividendsYtdCents)} · CAD, all accounts", color = white.copy(alpha = 0.85f), style = MaterialTheme.typography.bodyMedium)
+    }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             if (v.lastSyncMillis > 0) "Synced ${java.time.Instant.ofEpochMilli(v.lastSyncMillis).atZone(java.time.ZoneId.systemDefault()).format(SYNC_FORMAT)}" else "Not synced yet",
