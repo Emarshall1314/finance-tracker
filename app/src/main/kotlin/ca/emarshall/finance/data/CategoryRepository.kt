@@ -56,8 +56,8 @@ class CategoryRepository @Inject constructor(
      * Makes sure the built-in categories exist (the first time, and when a new version adds some). The
      * built-in rules live in code ([SeedRules]); copies that older versions stored in the database are removed.
      */
-    suspend fun ensureSeeded() = seedLock.withLock {
-        if (builtInsChecked && dao.count() > 0) return@withLock
+    suspend fun ensureSeeded(force: Boolean = false) = seedLock.withLock {
+        if (!force && builtInsChecked && dao.count() > 0) return@withLock
         db.withTransaction {
             // Unique key: existing ones are ignored, new built-ins (e.g. To/From Savings) are added.
             dao.insertAll(DefaultCategories.ALL.map { CategoryEntity(key = it.key, name = it.name, kind = it.kind.name, icon = it.icon, color = it.color, builtIn = true) })

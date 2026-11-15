@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -233,7 +234,7 @@ fun LineChart(
         val line = Path().apply { moveTo(pt(0).x, pt(0).y); for (i in 1 until n) lineTo(pt(i).x, pt(i).y) }
         val fill = Path().apply { addPath(line); lineTo(size.width, size.height); lineTo(0f, size.height); close() }
         // Drawn in from the left when the chart appears.
-        androidx.compose.ui.graphics.drawscope.clipRect(right = size.width * reveal + 4.dp.toPx()) {
+        clipRect(right = size.width * reveal + 4.dp.toPx()) {
             drawPath(fill, Brush.verticalGradient(listOf(color.copy(alpha = 0.25f), Color.Transparent)))
             drawPath(line, color, style = Stroke(2.5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
         }

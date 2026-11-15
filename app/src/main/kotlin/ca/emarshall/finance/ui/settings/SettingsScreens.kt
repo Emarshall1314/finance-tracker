@@ -15,6 +15,7 @@ import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Description
@@ -122,6 +123,7 @@ fun SettingsScreen(nav: NavController, vm: SettingsViewModel = hiltViewModel()) 
         }
         item {
             ca.emarshall.finance.ui.design.Group {
+                Row("Backup & restore", Icons.Default.Save, p.chart[4], "An encrypted file to keep somewhere safe") { nav.navigate(ca.emarshall.finance.ui.BackupRoute) }
                 Row("Summary & export", Icons.Default.Share, Color(0xFF8E8E93)) { nav.navigate(SummaryRoute) }
                 Row("App lock & privacy", Icons.Default.Lock, Color(0xFF8E8E93), last = true) { nav.navigate(SecurityRoute) }
             }
