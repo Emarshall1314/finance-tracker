@@ -5,9 +5,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -34,15 +32,6 @@ import ca.emarshall.finance.ui.design.SectionHeader
 import ca.emarshall.finance.ui.pretty
 import ca.emarshall.finance.ui.theme.Fin
 import ca.emarshall.finance.ui.transactions.TxListItem
-import com.patrykandpatrick.vico.compose.cartesian.CartesianChartHost
-import com.patrykandpatrick.vico.compose.cartesian.axis.HorizontalAxis
-import com.patrykandpatrick.vico.compose.cartesian.data.CartesianChartModelProducer
-import com.patrykandpatrick.vico.compose.cartesian.data.CartesianValueFormatter
-import com.patrykandpatrick.vico.compose.cartesian.data.columnSeries
-import com.patrykandpatrick.vico.compose.cartesian.layer.rememberColumnCartesianLayer
-import com.patrykandpatrick.vico.compose.cartesian.rememberCartesianChart
-import com.patrykandpatrick.vico.compose.common.ProvideVicoTheme
-import com.patrykandpatrick.vico.compose.m3.common.rememberM3VicoTheme
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
@@ -67,19 +56,24 @@ class CategoryDetailViewModel @Inject constructor(
     categories: CategoryRepository,
 ) : ViewModel() {
     private val route = savedState.toRoute<CategoryRoute>()
-    val detail = combine(transactions.rows, categories.categories) { rows, cats ->
+    /** The 12-month window ends at the month the screen was opened for; tapping a bar picks a month inside it. */
+    private val endMonth = runCatching { YearMonth.parse(route.month) }.getOrDefault(YearMonth.now())
+    private val shown = kotlinx.coroutines.flow.MutableStateFlow(endMonth)
+
+    fun show(m: YearMonth) { shown.value = m }
+
+    val detail = combine(transactions.rows, categories.categories, shown) { rows, cats, month ->
         val cat = cats.firstOrNull { it.id == route.categoryId } ?: return@combine null
-        val month = runCatching { YearMonth.parse(route.month) }.getOrDefault(YearMonth.now())
         val mine = rows.filter { it.categoryId == cat.id && it.transferLinkId == null }
         val a = Analytics(mine.map { it.toFact() })
-        val months = (11 downTo 0).map { month.minusMonths(it.toLong()) }
+        val months = (11 downTo 0).map { endMonth.minusMonths(it.toLong()) }
         val series = months.map { m -> m to (a.spendingByCategory(m).firstOrNull()?.cents ?: 0L) }
-        val active = series.dropLast(1).filter { it.second != 0L }
+        val active = series.filter { it.first != month && it.second != 0L }
         val inMonth = mine.filter { YearMonth.from(it.date) == month }
         CategoryDetail(
             name = cat.name,
             month = month,
-            monthCents = series.last().second,
+            monthCents = series.firstOrNull { it.first == month }?.second ?: 0L,
             averageCents = if (active.isEmpty()) 0 else active.sumOf { it.second } / active.size,
             series = series,
             merchants = inMonth.filter { it.amountCents < 0 }.groupBy { it.merchant }
@@ -106,18 +100,15 @@ fun CategoryDetailScreen(nav: NavController, vm: CategoryDetailViewModel = hiltV
                         color = if (diff > 0) p.negative else p.positive, style = MaterialTheme.typography.bodyMedium,
                     )
                 }
-                val producer = remember { CartesianChartModelProducer() }
-                val labels = c.series.map { it.first.format(SHORT_MONTH).take(1) }
-                LaunchedEffect(c.series) { producer.runTransaction { columnSeries { series(c.series.map { it.second / 100 }) } } }
-                ProvideVicoTheme(rememberM3VicoTheme(columnCartesianLayerColors = listOf(p.accent))) {
-                    CartesianChartHost(
-                        rememberCartesianChart(
-                            rememberColumnCartesianLayer(),
-                            bottomAxis = HorizontalAxis.rememberBottom(valueFormatter = CartesianValueFormatter { _, x, _ -> labels.getOrElse(x.toInt()) { "" } }),
-                        ),
-                        producer, Modifier.fillMaxWidth().height(160.dp),
-                    )
-                }
+                ca.emarshall.finance.ui.design.BarChart(
+                    bars = c.series.map { (m, cents) -> ca.emarshall.finance.ui.design.BarDatum(m.format(SHORT_MONTH).take(1), cents, p.accent) },
+                    selected = c.series.indexOfFirst { it.first == c.month }.takeIf { it >= 0 },
+                    // Tapping the shown month again keeps it; there is always one month on screen.
+                    onSelect = { i -> i?.let { c.series.getOrNull(it)?.first }?.let(vm::show) },
+                    reference = c.averageCents.takeIf { it > 0 }, height = 160.dp,
+                    description = "Spending in ${c.name} for the last 12 months. Tap a month to see it.",
+                )
+                Text("Tap a month to see it · dashed line is your average", style = MaterialTheme.typography.bodySmall, color = p.tertiaryLabel)
             }
         }
         if (c.merchants.isNotEmpty()) {

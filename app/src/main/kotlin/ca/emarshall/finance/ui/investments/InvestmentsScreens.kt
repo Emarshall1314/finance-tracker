@@ -163,14 +163,21 @@ private fun InvestmentsContent(v: InvestmentsView, busy: Boolean, onSync: () -> 
     if (v.holdings.isNotEmpty()) {
         ca.emarshall.finance.ui.design.SectionHeader("Allocation")
         val total = v.holdingsTotalCadCents.coerceAtLeast(1)
+        var sel by androidx.compose.runtime.remember(v.holdings) { androidx.compose.runtime.mutableStateOf<Int?>(null) }
         ca.emarshall.finance.ui.design.FinCard {
-            Row(Modifier.fillMaxWidth().height(14.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(7.dp)), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                v.holdings.filter { it.marketValueCadCents > 0 }.forEachIndexed { i, h ->
-                    androidx.compose.foundation.layout.Box(
-                        Modifier.weight(h.marketValueCadCents.toFloat() / total).height(14.dp).background(p.chart[i % p.chart.size]),
-                    )
-                }
-            }
+            // Same colour per holding as the list below (index in v.holdings); tap a segment for its numbers.
+            ca.emarshall.finance.ui.design.SegmentedBar(
+                v.holdings.mapIndexed { i, h -> ca.emarshall.finance.ui.design.ChartSlice(h.symbol, h.marketValueCadCents, p.chart[i % p.chart.size]) },
+                sel, { sel = it },
+            )
+            val h = sel?.let { v.holdings.getOrNull(it) }
+            Text(
+                if (h == null) "Tap the bar to see a holding" else {
+                    val pct = h.marketValueCadCents * 1000 / total
+                    "${h.symbol} · ${Money.formatWhole(h.marketValueCadCents)} CAD · ${pct / 10}.${pct % 10}% · P&L ${Money.format(h.openPnlCents, h.currency, true)}"
+                },
+                style = MaterialTheme.typography.bodySmall, color = if (h == null) p.tertiaryLabel else p.label,
+            )
         }
         ca.emarshall.finance.ui.design.Group {
             v.holdings.forEachIndexed { i, h ->

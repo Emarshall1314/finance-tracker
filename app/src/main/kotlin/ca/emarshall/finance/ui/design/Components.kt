@@ -72,10 +72,12 @@ fun LargeTitleScreen(
     title: String,
     modifier: Modifier = Modifier,
     trailing: @Composable RowScope.() -> Unit = {},
+    state: androidx.compose.foundation.lazy.LazyListState = androidx.compose.foundation.lazy.rememberLazyListState(),
     content: LazyListScope.() -> Unit,
 ) {
     LazyColumn(
         modifier.fillMaxSize().background(Fin.palette.background),
+        state = state,
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {

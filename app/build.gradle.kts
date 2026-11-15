@@ -131,7 +131,6 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
 
-    implementation(libs.vico.compose.m3)
     implementation(libs.pdfbox.android)
     // Official Anthropic SDK, used only for the opt-in Claude coach (api.anthropic.com).
     implementation(libs.anthropic.java)

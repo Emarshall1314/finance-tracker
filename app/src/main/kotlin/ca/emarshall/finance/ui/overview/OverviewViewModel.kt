@@ -53,7 +53,10 @@ data class OverviewState(
     val month: YearMonth = YearMonth.now(),
     val totals: MonthTotals = MonthTotals(YearMonth.now(), 0, 0),
     val categories: List<Pair<CategoryTotal, Long?>> = emptyList(),
+    /** Up to 12 months ending at the latest unlocked month, starting at the first month with any data. */
     val series: List<MonthTotals> = emptyList(),
+    /** Biggest spending categories for each month in [series], for the chart's tap details. */
+    val seriesCategories: Map<YearMonth, List<Pair<CategoryTotal, Long?>>> = emptyMap(),
     val topMerchants: List<MerchantTotal> = emptyList(),
     val feesCents: Long = 0,
     val upcomingBills: List<RecurringSeries> = emptyList(),
@@ -71,7 +74,7 @@ data class OverviewState(
     /** The account whose statement unlocks the next month (chequing), and when it should close. */
     val nextUnlock: Pair<String, LocalDate?>? = null,
     /** Year to date (Jan 1 to the end of [completeThrough]): spending by category, for the donut. */
-    val ytd: List<CategoryTotal> = emptyList(),
+    val ytd: List<Pair<CategoryTotal, Long?>> = emptyList(),
     val ytdYear: Int = LocalDate.now().year,
 )
 
@@ -136,7 +139,10 @@ class OverviewViewModel @Inject constructor(
             month = m,
             totals = a.monthTotals(m),
             categories = a.spendingByCategory(m).map { it to catIdByKey[it.categoryKey] },
-            series = a.monthSeries(last, 12),
+            series = a.monthSeries(last, 12).dropWhile { it.incomeCents == 0L && it.spendingCents == 0L },
+            seriesCategories = a.monthSeries(last, 12).associate { mt ->
+                mt.month to a.spendingByCategory(mt.month).take(3).map { it to catIdByKey[it.categoryKey] }
+            },
             topMerchants = a.topMerchants(m.atDay(1), m.atEndOfMonth(), 5),
             feesCents = a.feesAndInterest(m.atDay(1), m.atEndOfMonth()),
             upcomingBills = bills.filter { !it.nextExpected.isAfter(today.plusDays(31)) },
@@ -160,7 +166,7 @@ class OverviewViewModel @Inject constructor(
                 ca.emarshall.finance.core.statements.MonthCompleteness.waitingOn(cov, m).map { it.name to ca.emarshall.finance.core.statements.MonthCompleteness.nextClose(it) },
             nextUnlock = cov.filter { it.drivesMonths && it.coveredThrough != null }.minByOrNull { it.coveredThrough!! }
                 ?.let { it.name to ca.emarshall.finance.core.statements.MonthCompleteness.nextClose(it) },
-            ytd = a.spendingByCategory(LocalDate.of(last.year, 1, 1), last.atEndOfMonth()),
+            ytd = a.spendingByCategory(LocalDate.of(last.year, 1, 1), last.atEndOfMonth()).map { it to catIdByKey[it.categoryKey] },
             ytdYear = last.year,
         )
     }.flowOn(kotlinx.coroutines.Dispatchers.Default)
@@ -171,5 +177,7 @@ class OverviewViewModel @Inject constructor(
         val limit = complete.value ?: YearMonth.now()
         if (state.value.month < limit) month.value = state.value.month.plusMonths(1)
     }
+    /** Show [m] in the hero (from tapping a month in the chart). */
+    fun showMonth(m: YearMonth) { month.value = m }
     fun dismissChecklist() = viewModelScope.launch { settings.setChecklistDismissed(true) }
 }

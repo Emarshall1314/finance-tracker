@@ -35,7 +35,7 @@ You're building a private, single-user Android app that tracks my money. Read th
 - Secrets (the database passphrase and Questrade tokens): Jetpack DataStore plus Google Tink AEAD, with Tink's master key in the Android Keystore. **Do not use `androidx.security:security-crypto` / `EncryptedSharedPreferences`**, which are deprecated.
 - Networking: OkHttp, Retrofit and kotlinx.serialization.
 - Background sync and reminders: WorkManager.
-- Charts: Vico (for Compose).
+- Charts: drawn with Compose Canvas (`ui/design/Charts.kt`), no chart library. Every chart is interactive: tap a bar, slice, point or segment for its details.
 - PDF text extraction, only if Canadian Tire statements need it: PdfBox-Android (`com.tom-roush:pdfbox-android`).
 - App lock: `androidx.biometric` BiometricPrompt with a device-credential fallback.
 - Build: Gradle Kotlin DSL and a version catalog. Use the latest stable AGP, Kotlin, Compose BOM, and compile/target SDK at the time you build. minSdk 26.

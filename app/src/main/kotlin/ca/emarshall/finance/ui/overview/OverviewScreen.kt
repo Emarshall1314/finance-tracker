@@ -27,7 +27,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -65,17 +65,6 @@ import ca.emarshall.finance.ui.design.Pill
 import ca.emarshall.finance.ui.design.SectionHeader
 import ca.emarshall.finance.ui.pretty
 import ca.emarshall.finance.ui.theme.Fin
-import com.patrykandpatrick.vico.compose.cartesian.CartesianChartHost
-import com.patrykandpatrick.vico.compose.cartesian.axis.HorizontalAxis
-import com.patrykandpatrick.vico.compose.cartesian.data.CartesianChartModelProducer
-import com.patrykandpatrick.vico.compose.cartesian.data.CartesianValueFormatter
-import com.patrykandpatrick.vico.compose.cartesian.data.columnSeries
-import com.patrykandpatrick.vico.compose.cartesian.data.lineSeries
-import com.patrykandpatrick.vico.compose.cartesian.layer.rememberColumnCartesianLayer
-import com.patrykandpatrick.vico.compose.cartesian.layer.rememberLineCartesianLayer
-import com.patrykandpatrick.vico.compose.cartesian.rememberCartesianChart
-import com.patrykandpatrick.vico.compose.common.ProvideVicoTheme
-import com.patrykandpatrick.vico.compose.m3.common.rememberM3VicoTheme
 import java.time.YearMonth
 
 @Composable
@@ -85,7 +74,9 @@ fun OverviewScreen(nav: NavController, vm: OverviewViewModel = hiltViewModel()) 
     var allCategories by remember { mutableStateOf(false) }
     val stale = s.freshness.count { it.stale && it.dataThrough != null }
 
-    LargeTitleScreen("Overview") {
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    LargeTitleScreen("Overview", state = listState) {
         item { ca.emarshall.finance.ui.accounts.NewAccountsCard(nav) }
         if (!s.loading && !s.checklist.complete && !s.checklist.dismissed) item { SetupCard(s.checklist, nav, vm::dismissChecklist) }
 
@@ -151,12 +142,17 @@ fun OverviewScreen(nav: NavController, vm: OverviewViewModel = hiltViewModel()) 
 
             if (s.ytd.isNotEmpty()) {
                 item { SectionHeader("${s.ytdYear} so far") }
-                item { YtdDonutCard(s) }
+                item { YtdDonutCard(s, nav) }
             }
 
             if (s.series.any { it.incomeCents != 0L || it.spendingCents != 0L }) {
-                item { SectionHeader("Cash flow") }
-                item { CashFlowCard(s) }
+                item { SectionHeader("Saved each month") }
+                item {
+                    CashFlowCard(s, nav) { m ->
+                        vm.showMonth(m)
+                        scope.launch { listState.animateScrollToItem(0) }
+                    }
+                }
             }
         }
 
@@ -253,56 +249,129 @@ private fun Step(label: String, done: Boolean, onClick: () -> Unit) {
     }
 }
 
+
+/**
+ * Month by month: how much was saved (green) or overspent (red), against the dashed average. Tap a month
+ * for its income, spending and biggest categories.
+ */
 @Composable
-private fun CashFlowCard(s: OverviewState) {
+private fun CashFlowCard(s: OverviewState, nav: NavController, onShowMonth: (YearMonth) -> Unit) {
+    val p = Fin.palette
+    val months = s.series
+    var sel by remember(months) { mutableStateOf<Int?>(null) }
+    val avgNet = months.sumOf { it.netCents } / months.size
+    fun notFinal(m: YearMonth) = s.pendingCards.isNotEmpty() && m == s.completeThrough
+    val picked = sel?.let { months.getOrNull(it) }
     FinCard {
-        val producer = remember { CartesianChartModelProducer() }
-        val labels = s.series.map { it.month.format(SHORT_MONTH).take(1) }
-        LaunchedEffect(s.series) {
-            // Whole dollars for plotting only; numbers shown as text stay exact cents.
-            producer.runTransaction {
-                columnSeries {
-                    series(s.series.map { it.incomeCents / 100 })
-                    series(s.series.map { it.spendingCents / 100 })
-                }
-            }
-        }
-        ProvideVicoTheme(rememberM3VicoTheme(columnCartesianLayerColors = listOf(Fin.palette.positive, Fin.palette.accent))) {
-            CartesianChartHost(
-                rememberCartesianChart(
-                    rememberColumnCartesianLayer(),
-                    bottomAxis = HorizontalAxis.rememberBottom(valueFormatter = CartesianValueFormatter { _, x, _ -> labels.getOrElse(x.toInt()) { "" } }),
-                ),
-                producer,
-                Modifier.fillMaxWidth().height(180.dp),
+        if (picked == null) {
+            val total = months.sumOf { it.netCents }
+            Text("Saved over ${months.size} month${if (months.size == 1) "" else "s"}", style = MaterialTheme.typography.bodyMedium, color = p.secondaryLabel)
+            Text(Money.formatWhole(total), style = MaterialTheme.typography.headlineMedium, color = if (total < 0) p.negative else p.label)
+            Text("${Money.formatWhole(avgNet)} a month on average · tap a month for details", style = MaterialTheme.typography.bodySmall, color = p.secondaryLabel)
+        } else {
+            Text(picked.month.pretty() + if (notFinal(picked.month)) " · not final" else "", style = MaterialTheme.typography.bodyMedium, color = p.secondaryLabel)
+            Text(
+                (if (picked.netCents >= 0) "Saved " else "Overspent ") + Money.formatWhole(Math.abs(picked.netCents)),
+                style = MaterialTheme.typography.headlineMedium, color = if (picked.netCents >= 0) p.positive else p.negative,
+            )
+            val diff = picked.netCents - avgNet
+            Text(
+                "${Money.formatWhole(Math.abs(diff))} ${if (diff >= 0) "better" else "worse"} than your average month",
+                style = MaterialTheme.typography.bodySmall, color = p.secondaryLabel,
             )
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            LegendDot(Fin.palette.positive, "Income")
-            LegendDot(Fin.palette.accent, "Spending")
-            val avg = s.series.filter { it.incomeCents != 0L || it.spendingCents != 0L }
-            if (avg.isNotEmpty()) Text("Avg saved ${Money.formatWhole(avg.sumOf { it.netCents } / avg.size)}/mo", style = MaterialTheme.typography.bodySmall, color = Fin.palette.secondaryLabel)
+        ca.emarshall.finance.ui.design.BarChart(
+            bars = months.map { mt ->
+                ca.emarshall.finance.ui.design.BarDatum(
+                    if (months.size <= 6) mt.month.format(SHORT_MONTH) else mt.month.format(SHORT_MONTH).take(1),
+                    mt.netCents, if (mt.netCents >= 0) p.positive else p.negative, faded = notFinal(mt.month),
+                )
+            },
+            selected = sel, onSelect = { sel = it }, reference = avgNet, height = 170.dp,
+            description = "Money saved each month. Tap a month for details.",
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            LegendDot(p.positive, "Saved")
+            LegendDot(p.negative, "Overspent")
+            Text("┄ Average", style = MaterialTheme.typography.bodySmall, color = p.secondaryLabel)
+        }
+        androidx.compose.material3.HorizontalDivider(color = p.separator, thickness = 0.5.dp)
+        if (picked == null) {
+            val withData = months.filter { !notFinal(it.month) }
+            StatRow("Average income", Money.formatWhole(withData.sumOf { it.incomeCents } / withData.size.coerceAtLeast(1)))
+            StatRow("Average spending", Money.formatWhole(withData.sumOf { it.spendingCents } / withData.size.coerceAtLeast(1)))
+            if (withData.size >= 2) {
+                val best = withData.maxBy { it.netCents }
+                val worst = withData.minBy { it.netCents }
+                StatRow("Best month", "${best.month.format(SHORT_MONTH)} · ${Money.formatWhole(best.netCents)}", p.positive)
+                StatRow("Toughest month", "${worst.month.format(SHORT_MONTH)} · ${Money.formatWhole(worst.netCents)}", if (worst.netCents < 0) p.negative else p.label)
+            }
+        } else {
+            StatRow("Income", Money.formatWhole(picked.incomeCents))
+            StatRow("Spending", Money.formatWhole(picked.spendingCents))
+            StatRow("Kept", picked.savingsRatePercent?.let { "$it% of income" } ?: "–")
+            val cats = s.seriesCategories[picked.month].orEmpty()
+            if (cats.isNotEmpty()) {
+                Text("Biggest spending", style = MaterialTheme.typography.labelMedium, color = p.secondaryLabel, modifier = Modifier.padding(top = 4.dp))
+                cats.forEachIndexed { i, (c, id) ->
+                    Row(
+                        Modifier.fillMaxWidth().clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                            .clickable(enabled = id != null) { nav.navigate(ca.emarshall.finance.ui.CategoryRoute(id ?: -1, picked.month.toString())) }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        androidx.compose.foundation.layout.Box(Modifier.size(8.dp).clip(androidx.compose.foundation.shape.CircleShape).background(p.chart[i % p.chart.size]))
+                        Text(c.categoryName, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                        Text(Money.formatWhole(c.cents), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = p.tertiaryLabel, modifier = Modifier.size(18.dp))
+                    }
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = { onShowMonth(picked.month) }) { Text("Show this month above") }
+                TextButton(onClick = { nav.navigate(TransactionsRoute(month = picked.month.toString())) }) { Text("Transactions") }
+            }
         }
     }
+}
+
+@Composable
+private fun StatRow(label: String, value: String, color: Color = Color.Unspecified) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = Fin.palette.secondaryLabel)
+        Text(value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = if (color == Color.Unspecified) Fin.palette.label else color)
+    }
+}
+
+/** Total net worth by month; tap or drag for a month's value. */
+@Composable
+private fun NetWorthTrend(trend: List<Pair<YearMonth, Long>>) {
+    if (trend.size < 2) return
+    val p = Fin.palette
+    var sel by remember(trend) { mutableStateOf<Int?>(null) }
+    val change = trend.last().second - trend.first().second
+    val point = sel?.let { trend.getOrNull(it) }
+    if (point == null) {
+        Text(
+            "Total ${if (change >= 0) "▲" else "▼"} ${Money.formatWhole(Math.abs(change))} since ${trend.first().first.format(SHORT_MONTH)} · tap the line",
+            color = if (change >= 0) p.positive else p.negative, style = MaterialTheme.typography.bodySmall,
+        )
+    } else {
+        val vsStart = point.second - trend.first().second
+        Text(
+            "${point.first.pretty()}: ${Money.formatWhole(point.second)}" +
+                if (sel != 0) " (${if (vsStart >= 0) "+" else "-"}${Money.formatWhole(Math.abs(vsStart))} since ${trend.first().first.format(SHORT_MONTH)})" else "",
+            style = MaterialTheme.typography.bodySmall, color = p.label,
+        )
+    }
+    ca.emarshall.finance.ui.design.LineChart(trend.map { it.second }, sel, { sel = it }, p.accent, height = 90.dp)
 }
 
 @Composable
 private fun NetWorthCard(s: OverviewState) {
     FinCard {
         Text(Money.formatWhole(s.netWorthCents ?: 0), style = MaterialTheme.typography.headlineMedium)
-        val trend = s.netWorthTrend.filter { it.second != 0L }
-        if (trend.size >= 2) {
-            val change = trend.last().second - trend.first().second
-            Text(
-                "${if (change >= 0) "▲" else "▼"} ${Money.formatWhole(Math.abs(change))} since ${trend.first().first.format(SHORT_MONTH)}",
-                color = if (change >= 0) Fin.palette.positive else Fin.palette.negative, style = MaterialTheme.typography.bodyMedium,
-            )
-            val producer = remember { CartesianChartModelProducer() }
-            LaunchedEffect(trend) { producer.runTransaction { lineSeries { series(trend.map { it.second / 100 }) } } }
-            ProvideVicoTheme(rememberM3VicoTheme(lineCartesianLayerColors = listOf(Fin.palette.accent))) {
-                CartesianChartHost(rememberCartesianChart(rememberLineCartesianLayer()), producer, Modifier.fillMaxWidth().height(90.dp))
-            }
-        }
+        NetWorthTrend(s.netWorthTrend.filter { it.second != 0L })
         s.balances.forEach { b ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ColorDot(if (b.isLiability) 0xFFFF9F0A else 0xFF5E5CE6)
@@ -327,26 +396,23 @@ private fun LiquidCard(b: ca.emarshall.finance.core.analytics.NetWorthBreakdown,
         Text(Money.formatWhole(b.liquidCents), style = MaterialTheme.typography.headlineMedium)
         Text("Cash and investments you can reach, minus what you owe", style = MaterialTheme.typography.bodySmall, color = p.secondaryLabel)
 
-        // Stacked bar of liquid assets, one segment per account; debt as a red tail proportional to its size.
+        // One segment per account with money in it, then what's owed as a red tail. Tap a segment for its account.
         val liquidSegs = (b.bucket(ca.emarshall.finance.core.analytics.LiquidityBucket.CASH) + b.bucket(ca.emarshall.finance.core.analytics.LiquidityBucket.INVESTMENTS))
             .filter { it.position.balanceCents > 0 }
-        val assets = liquidSegs.sumOf { it.position.balanceCents }.coerceAtLeast(1)
         val debt = -b.debtCents
-        Row(
-            Modifier.fillMaxWidth().height(14.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(7.dp)),
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            liquidSegs.forEachIndexed { i, seg ->
-                val base = bucketColor.getValue(seg.bucket)
-                androidx.compose.foundation.layout.Box(
-                    Modifier.weight(seg.position.balanceCents.toFloat() / (assets + debt.coerceAtLeast(0)).toFloat()).height(14.dp)
-                        .background(base.copy(alpha = 1f - 0.18f * (i % 3))),
-                )
-            }
-            if (debt > 0) androidx.compose.foundation.layout.Box(
-                Modifier.weight(debt.toFloat() / (assets + debt).toFloat()).height(14.dp).background(p.negative.copy(alpha = 0.75f)),
+        val segs = liquidSegs.mapIndexed { i, seg ->
+            ca.emarshall.finance.ui.design.ChartSlice(
+                "${seg.position.nickname} · ${Money.formatWhole(seg.position.balanceCents)}",
+                seg.position.balanceCents, bucketColor.getValue(seg.bucket).copy(alpha = 1f - 0.18f * (i % 3)),
             )
-        }
+        } + if (debt > 0) listOf(ca.emarshall.finance.ui.design.ChartSlice("Owed on cards and loans · ${Money.formatWhole(debt)}", debt, p.negative.copy(alpha = 0.75f))) else emptyList()
+        var sel by remember(segs.size) { mutableStateOf<Int?>(null) }
+        ca.emarshall.finance.ui.design.SegmentedBar(segs, sel, { sel = it })
+        val total = segs.sumOf { it.value }.coerceAtLeast(1)
+        Text(
+            sel?.let { i -> segs.getOrNull(i)?.let { "${it.label} · ${it.value * 100 / total}% of the bar" } } ?: "Tap the bar to see each account",
+            style = MaterialTheme.typography.bodySmall, color = if (sel != null) p.label else p.tertiaryLabel,
+        )
 
         listOf(
             ca.emarshall.finance.core.analytics.LiquidityBucket.CASH to b.cashCents,
@@ -380,14 +446,7 @@ private fun LiquidCard(b: ca.emarshall.finance.core.analytics.NetWorthBreakdown,
             Text("Total net worth", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = p.secondaryLabel)
             Text(Money.formatWhole(b.totalCents), style = MaterialTheme.typography.bodyMedium)
         }
-        val trend = s.netWorthTrend.filter { it.second != 0L }
-        if (trend.size >= 2) {
-            val change = trend.last().second - trend.first().second
-            Text(
-                "Total ${if (change >= 0) "▲" else "▼"} ${Money.formatWhole(Math.abs(change))} since ${trend.first().first.format(SHORT_MONTH)}",
-                color = if (change >= 0) p.positive else p.negative, style = MaterialTheme.typography.bodySmall,
-            )
-        }
+        NetWorthTrend(s.netWorthTrend.filter { it.second != 0L })
         val oldest = b.segments.minOfOrNull { it.position.asOf }
         if (oldest != null && oldest.isBefore(java.time.LocalDate.now().minusDays(35))) {
             Text("Some balances are from ${oldest.format(SHORT_DAY)} — import newer statements to update.", style = MaterialTheme.typography.bodySmall, color = p.warning)
@@ -395,46 +454,74 @@ private fun LiquidCard(b: ca.emarshall.finance.core.analytics.NetWorthBreakdown,
     }
 }
 
-/** Year-to-date spending by category as a donut: top six categories plus "Everything else". */
+/**
+ * Year-to-date spending by category as a donut: top six categories plus "Everything else". Tap a slice or
+ * a row to see its share, monthly average and a way into its transactions.
+ */
 @Composable
-private fun YtdDonutCard(s: OverviewState) {
+private fun YtdDonutCard(s: OverviewState, nav: NavController) {
     val p = Fin.palette
-    val total = s.ytd.sumOf { it.cents }.coerceAtLeast(1)
-    val top = s.ytd.take(6)
-    val rest = s.ytd.drop(6).sumOf { it.cents }
-    val slices = top.map { it.categoryName to it.cents } + if (rest > 0) listOf("Everything else" to rest) else emptyList()
-    val colors = slices.indices.map { i -> if (i < 6) p.chart[i % p.chart.size] else p.tertiaryLabel }
+    val all = s.ytd
+    val total = all.sumOf { it.first.cents }.coerceAtLeast(1)
+    val top = all.take(6)
+    val rest = all.drop(6)
+    val slices = top.mapIndexed { i, (c, _) -> ca.emarshall.finance.ui.design.ChartSlice(c.categoryName, c.cents, p.chart[i % p.chart.size]) } +
+        if (rest.isNotEmpty()) listOf(ca.emarshall.finance.ui.design.ChartSlice("Everything else", rest.sumOf { it.first.cents }, p.tertiaryLabel)) else emptyList()
+    var sel by remember(all) { mutableStateOf<Int?>(null) }
+    val monthsSoFar = (s.completeThrough?.monthValue ?: java.time.LocalDate.now().monthValue).coerceAtLeast(1)
+    fun pct(cents: Long): String { val t = cents * 1000 / total; return "${t / 10}.${t % 10}%" }
+    val linkMonth = (s.completeThrough ?: YearMonth.now()).toString()
+
     FinCard {
-        androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().height(210.dp), contentAlignment = Alignment.Center) {
-            val track = p.cardSecondary
-            androidx.compose.foundation.Canvas(Modifier.size(200.dp)) {
-                val stroke = 30.dp.toPx()
-                val inset = stroke / 2
-                val arcSize = androidx.compose.ui.geometry.Size(size.width - stroke, size.height - stroke)
-                val topLeft = androidx.compose.ui.geometry.Offset(inset, inset)
-                drawArc(track, 0f, 360f, false, topLeft, arcSize, style = androidx.compose.ui.graphics.drawscope.Stroke(stroke))
-                val gap = if (slices.size > 1) 1.6f else 0f
-                var start = -90f
-                slices.forEachIndexed { i, (_, cents) ->
-                    val sweep = 360f * cents / total
-                    if (sweep > gap) drawArc(colors[i], start + gap / 2, sweep - gap, false, topLeft, arcSize,
-                        style = androidx.compose.ui.graphics.drawscope.Stroke(stroke, cap = androidx.compose.ui.graphics.StrokeCap.Butt))
-                    start += sweep
+        ca.emarshall.finance.ui.design.DonutChart(slices, sel, { sel = it }) {
+            val picked = sel?.let { slices.getOrNull(it) }
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 48.dp)) {
+                if (picked == null) {
+                    Text("Spent", style = MaterialTheme.typography.bodySmall, color = p.secondaryLabel)
+                    Text(Money.formatWhole(all.sumOf { it.first.cents }), style = MaterialTheme.typography.titleLarge)
+                    s.completeThrough?.let { Text("to ${it.atEndOfMonth().format(SHORT_DAY)}", style = MaterialTheme.typography.bodySmall, color = p.secondaryLabel) }
+                } else {
+                    Text(picked.label, style = MaterialTheme.typography.bodySmall, color = p.secondaryLabel, maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    Text(Money.formatWhole(picked.value), style = MaterialTheme.typography.titleLarge)
+                    Text("${pct(picked.value)} · ${Money.formatWhole(picked.value / monthsSoFar)}/mo", style = MaterialTheme.typography.bodySmall, color = p.secondaryLabel)
                 }
             }
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Spent", style = MaterialTheme.typography.bodySmall, color = p.secondaryLabel)
-                Text(Money.formatWhole(s.ytd.sumOf { it.cents }), style = MaterialTheme.typography.titleLarge)
-                s.completeThrough?.let { Text("to ${it.atEndOfMonth().format(SHORT_DAY)}", style = MaterialTheme.typography.bodySmall, color = p.secondaryLabel) }
+        }
+        slices.forEachIndexed { i, sl ->
+            val dim = sel != null && sel != i
+            Row(
+                Modifier.fillMaxWidth().clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                    .background(if (sel == i) p.cardSecondary else Color.Transparent)
+                    .clickable { sel = if (sel == i) null else i }.padding(horizontal = 6.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                androidx.compose.foundation.layout.Box(Modifier.size(10.dp).clip(androidx.compose.foundation.shape.CircleShape).background(sl.color.copy(alpha = if (dim) 0.32f else 1f)))
+                Text(sl.label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = if (dim) p.secondaryLabel else p.label)
+                Text(pct(sl.value), style = MaterialTheme.typography.bodyMedium, color = p.secondaryLabel)
+                Text(Money.formatWhole(sl.value), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = if (dim) p.secondaryLabel else p.label)
             }
         }
-        slices.forEachIndexed { i, (name, cents) ->
-            val pct = cents * 1000 / total
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                androidx.compose.foundation.layout.Box(Modifier.size(10.dp).clip(androidx.compose.foundation.shape.CircleShape).background(colors[i]))
-                Text(name, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                Text("${pct / 10}.${pct % 10}%", style = MaterialTheme.typography.bodyMedium, color = p.secondaryLabel)
-                Text(Money.formatWhole(cents), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+        val picked = sel
+        if (picked != null) {
+            androidx.compose.material3.HorizontalDivider(color = p.separator, thickness = 0.5.dp)
+            if (picked < top.size) {
+                val (c, id) = top[picked]
+                Text("About ${Money.formatWhole(c.cents / monthsSoFar)} a month across $monthsSoFar month${if (monthsSoFar == 1) "" else "s"} this year.",
+                    style = MaterialTheme.typography.bodySmall, color = p.secondaryLabel)
+                if (id != null) TextButton(onClick = { nav.navigate(ca.emarshall.finance.ui.CategoryRoute(id, linkMonth)) }) { Text("Open ${c.categoryName}") }
+            } else {
+                Text("What's in \"Everything else\"", style = MaterialTheme.typography.labelMedium, color = p.secondaryLabel)
+                rest.forEach { (c, id) ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable(enabled = id != null) { nav.navigate(ca.emarshall.finance.ui.CategoryRoute(id ?: -1, linkMonth)) }.padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(c.categoryName, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                        Text(pct(c.cents), style = MaterialTheme.typography.bodySmall, color = p.secondaryLabel, modifier = Modifier.padding(end = 10.dp))
+                        Text(Money.formatWhole(c.cents), style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
             }
         }
     }
