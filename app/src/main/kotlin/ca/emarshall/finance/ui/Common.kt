@@ -113,35 +113,26 @@ fun MoneyText(
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/** Pushed-screen bar: back chevron, centred title (see design/Components.kt). */
 @Composable
 fun BackTopBar(title: String, onBack: () -> Unit, actions: @Composable () -> Unit = {}) {
-    TopAppBar(
-        title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-        navigationIcon = {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
-        },
-        actions = { actions() },
-    )
+    ca.emarshall.finance.ui.design.NavBar(title, onBack) { actions() }
 }
 
+/** A titled white card on the grouped background. */
 @Composable
 fun SectionCard(title: String?, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    OutlinedCard(modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (title != null) Text(title, style = MaterialTheme.typography.titleMedium)
-            content()
-        }
+    ca.emarshall.finance.ui.design.FinCard(modifier) {
+        if (title != null) Text(title, style = MaterialTheme.typography.titleMedium)
+        content()
     }
 }
 
 @Composable
 fun StatTile(label: String, value: String, modifier: Modifier = Modifier, valueColor: Color = Color.Unspecified) {
-    Card(modifier) {
-        Column(Modifier.padding(12.dp)) {
-            Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(value, style = MaterialTheme.typography.titleLarge, color = valueColor, maxLines = 1)
-        }
+    Column(modifier.clip(androidx.compose.foundation.shape.RoundedCornerShape(18.dp)).background(ca.emarshall.finance.ui.theme.Fin.palette.card).padding(14.dp)) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = ca.emarshall.finance.ui.theme.Fin.palette.secondaryLabel)
+        Text(value, style = MaterialTheme.typography.titleLarge, color = valueColor, maxLines = 1)
     }
 }
 
@@ -170,11 +161,13 @@ fun <T> Picker(
 ) {
     var open by remember { mutableStateOf(false) }
     Box(modifier) {
-        OutlinedCard(
-            Modifier.fillMaxWidth().clickable(role = Role.DropdownList) { open = true }
+        Box(
+            Modifier.fillMaxWidth().clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                .background(ca.emarshall.finance.ui.theme.Fin.palette.cardSecondary)
+                .clickable(role = Role.DropdownList) { open = true }
                 .semantics { contentDescription = "$label: ${selected?.let(display) ?: placeholder}" },
         ) {
-            Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(selected?.let(display) ?: placeholder, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -193,8 +186,8 @@ fun <T> Picker(
 /** A thin horizontal bar for category/allocation breakdowns. [fraction] is 0..1. */
 @Composable
 fun ShareBar(fraction: Float, color: Color, modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxWidth().height(8.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant)) {
-        Box(Modifier.fillMaxWidth(fraction.coerceIn(0f, 1f)).height(8.dp).clip(CircleShape).background(color))
+    Box(modifier.fillMaxWidth().height(6.dp).clip(CircleShape).background(ca.emarshall.finance.ui.theme.Fin.palette.cardSecondary)) {
+        Box(Modifier.fillMaxWidth(fraction.coerceIn(0f, 1f)).height(6.dp).clip(CircleShape).background(color))
     }
 }
 
