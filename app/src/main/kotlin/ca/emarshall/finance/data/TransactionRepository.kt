@@ -27,6 +27,14 @@ fun TxRow.toFact() = TxFact(
         ?: if (amountCents >= 0) CategoryKind.INCOME else CategoryKind.EXPENSE,
     merchant = merchant,
     isTransfer = transferLinkId != null,
+    accountKind = when (runCatching { ca.emarshall.finance.core.model.AccountType.valueOf(accountType) }.getOrNull()) {
+        ca.emarshall.finance.core.model.AccountType.CREDIT_CARD, ca.emarshall.finance.core.model.AccountType.LINE_OF_CREDIT ->
+            ca.emarshall.finance.core.analytics.AccountKind.CARD
+        ca.emarshall.finance.core.model.AccountType.TFSA, ca.emarshall.finance.core.model.AccountType.RRSP,
+        ca.emarshall.finance.core.model.AccountType.FHSA, ca.emarshall.finance.core.model.AccountType.MARGIN,
+        ca.emarshall.finance.core.model.AccountType.CASH -> ca.emarshall.finance.core.analytics.AccountKind.INVESTMENT
+        else -> ca.emarshall.finance.core.analytics.AccountKind.BANK
+    },
 )
 
 val TxRow.isTransfer: Boolean get() = transferLinkId != null || categoryKind == CategoryKind.TRANSFER.name

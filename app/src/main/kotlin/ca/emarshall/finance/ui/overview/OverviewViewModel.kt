@@ -64,6 +64,13 @@ data class OverviewState(
     val breakdown: ca.emarshall.finance.core.analytics.NetWorthBreakdown? = null,
     val freshness: List<FreshnessRow> = emptyList(),
     val hasTransactions: Boolean = false,
+    /** Latest month with every account's statements in; the dashboard never shows a partial month. */
+    val completeThrough: YearMonth? = null,
+    /** Accounts the next month is still waiting on. */
+    val waitingOn: List<String> = emptyList(),
+    /** Year to date (Jan 1 to the end of [completeThrough]): spending by category, for the donut. */
+    val ytd: List<CategoryTotal> = emptyList(),
+    val ytdYear: Int = LocalDate.now().year,
 )
 
 @HiltViewModel
@@ -82,7 +89,10 @@ class OverviewViewModel @Inject constructor(
         ins.filter { it.severity >= ca.emarshall.finance.core.insights.Severity.WARNING }.take(3) to missing
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList<ca.emarshall.finance.core.insights.Insight>() to 0)
 
-    private val month = MutableStateFlow(YearMonth.now())
+    /** Month the user picked; null means "latest complete month". */
+    private val month = MutableStateFlow<YearMonth?>(null)
+    private val complete = statements.latestComplete.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    private val coverage = statements.coverage
 
     private val base = combine(transactions.rows, accounts.accounts, categories.categories, db.balances().observeAll(), db.imports().observeCount()) {
             rows, accs, cats, bals, imports ->
@@ -97,8 +107,14 @@ class OverviewViewModel @Inject constructor(
         val importCount: Int,
     )
 
-    val state: StateFlow<OverviewState> = combine(base, reminders.reminders, settings.settings, month) { b, rems, s, m ->
+    private val monthInfo = combine(month, statements.latestComplete, coverage) { picked, done, cov -> Triple(picked, done, cov) }
+
+    val state: StateFlow<OverviewState> = combine(base, reminders.reminders, settings.settings, monthInfo) { b, rems, s, mi ->
         val today = LocalDate.now()
+        val (picked, done, cov) = mi
+        // Only complete months: before any statements, fall back to the current month.
+        val last = done ?: YearMonth.from(today)
+        val m = picked?.coerceAtMost(last) ?: last
         val facts = b.rows.map { it.toFact() }
         val a = Analytics(facts)
         val catIdByKey = b.categories.associate { it.ruleKey to it.id }
@@ -118,7 +134,7 @@ class OverviewViewModel @Inject constructor(
             month = m,
             totals = a.monthTotals(m),
             categories = a.spendingByCategory(m).map { it to catIdByKey[it.categoryKey] },
-            series = a.monthSeries(YearMonth.from(today), 12),
+            series = a.monthSeries(last, 12),
             topMerchants = a.topMerchants(m.atDay(1), m.atEndOfMonth(), 5),
             feesCents = a.feesAndInterest(m.atDay(1), m.atEndOfMonth()),
             upcomingBills = bills.filter { !it.nextExpected.isAfter(today.plusDays(31)) },
@@ -137,11 +153,19 @@ class OverviewViewModel @Inject constructor(
                 FreshnessRow(acc.id, acc.nickname, through, f.isStale)
             },
             hasTransactions = b.rows.isNotEmpty(),
+            completeThrough = done,
+            waitingOn = if (done == null) emptyList() else
+                ca.emarshall.finance.core.statements.MonthCompleteness.waitingOn(cov, done.plusMonths(1)).map { it.name },
+            ytd = a.spendingByCategory(LocalDate.of(last.year, 1, 1), last.atEndOfMonth()),
+            ytdYear = last.year,
         )
     }.flowOn(kotlinx.coroutines.Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), OverviewState())
 
-    fun previousMonth() { month.value = month.value.minusMonths(1) }
-    fun nextMonth() { if (month.value < YearMonth.now()) month.value = month.value.plusMonths(1) }
+    fun previousMonth() { month.value = state.value.month.minusMonths(1) }
+    fun nextMonth() {
+        val limit = complete.value ?: YearMonth.now()
+        if (state.value.month < limit) month.value = state.value.month.plusMonths(1)
+    }
     fun dismissChecklist() = viewModelScope.launch { settings.setChecklistDismissed(true) }
 }

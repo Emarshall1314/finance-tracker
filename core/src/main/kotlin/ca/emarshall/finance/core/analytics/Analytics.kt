@@ -18,8 +18,25 @@ data class TxFact(
     val merchant: String,
     /** Linked to another of my accounts. Transfers never count as income or spending. */
     val isTransfer: Boolean,
+    /** What kind of account it's in; decides whether money in counts as income. */
+    val accountKind: AccountKind = AccountKind.BANK,
 ) {
     val countsAsTransfer get() = isTransfer || kind == CategoryKind.TRANSFER
+}
+
+/**
+ * Income only ever comes from bank accounts. On a card, money in that isn't a payment is a return or
+ * refund: it reduces spending. Money moving inside an investment account (dividends, interest, fees) stays
+ * there and is neither income nor spending.
+ */
+enum class AccountKind { BANK, CARD, INVESTMENT }
+
+/** Applies the account rules above, so every total treats card refunds and investment activity the same way. */
+fun TxFact.forCashFlow(): TxFact? = when {
+    accountKind == AccountKind.INVESTMENT -> null
+    accountKind == AccountKind.CARD && kind == CategoryKind.INCOME ->
+        copy(kind = CategoryKind.EXPENSE, categoryKey = "refunds", categoryName = "Returns & refunds")
+    else -> this
 }
 
 data class MonthTotals(val month: YearMonth, val incomeCents: Long, val spendingCents: Long) {
@@ -37,8 +54,9 @@ data class MerchantTotal(val merchant: String, val cents: Long, val count: Int)
  * Totals are in the home currency only (CAD). Foreign-currency rows are reported separately by
  * [foreignCurrencyTotals] rather than converted at a guessed rate.
  */
-class Analytics(facts: List<TxFact>, private val homeCurrency: String = "CAD") {
+class Analytics(rawFacts: List<TxFact>, private val homeCurrency: String = "CAD") {
 
+    private val facts = rawFacts.mapNotNull { it.forCashFlow() }
     private val home = facts.filter { it.currency == homeCurrency }
     private val all = facts
 
@@ -54,7 +72,7 @@ class Analytics(facts: List<TxFact>, private val homeCurrency: String = "CAD") {
         inRange(from, to).filter { !it.countsAsTransfer && it.kind == CategoryKind.EXPENSE }
             .groupBy { it.categoryKey }
             .map { (k, l) -> CategoryTotal(k, l.first().categoryName, -l.sumOf { it.amountCents }) }
-            .filter { it.cents != 0L }
+            .filter { it.cents > 0L }
             .sortedByDescending { it.cents }
 
     fun spendingByCategory(m: YearMonth) = spendingByCategory(m.atDay(1), m.atEndOfMonth())

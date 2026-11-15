@@ -31,9 +31,10 @@ class InsightsRepository @Inject constructor(
     private val transactions: TransactionRepository,
     private val settings: SettingsRepository,
     private val notifier: Notifier,
+    private val statements: StatementsRepository,
 ) {
     /** All current insights, dismissed ones included (the UI filters). */
-    val all: Flow<List<Insight>> = combine(transactions.rows, accounts.accounts, db.balances().observeAll()) { rows, accs, bals ->
+    val all: Flow<List<Insight>> = combine(transactions.rows, accounts.accounts, db.balances().observeAll(), statements.latestComplete) { rows, accs, bals, complete ->
         val today = LocalDate.now()
         InsightEngine.analyze(
             facts = rows.map { it.toFact() },
@@ -41,6 +42,7 @@ class InsightsRepository @Inject constructor(
             balances = latestBalances(bals, accs.associateBy { it.id }),
             accountNames = accs.associate { it.id to it.nickname },
             today = today,
+            completeThrough = complete,
         )
     }
 
@@ -90,6 +92,19 @@ data class AccountStatements(
 /** The statement library and missing-statement check, per account. */
 @Singleton
 class StatementsRepository @Inject constructor(private val db: FinanceDatabase, accounts: AccountRepository) {
+    /** How far each statement account's imports reach (Questrade syncs live, so it's left out). */
+    val coverage: Flow<List<ca.emarshall.finance.core.statements.AccountCoverage>> =
+        combine(accounts.accounts, db.imports().observeBatches()) { accs, batches ->
+            accs.filter { it.questradeNumber == null }.map { a ->
+                ca.emarshall.finance.core.statements.AccountCoverage(
+                    a.id, a.nickname, batches.filter { it.accountId == a.id }.mapNotNull { it.periodEnd ?: it.dateTo }.maxOrNull(),
+                )
+            }
+        }
+
+    /** Latest month every statement account fully covers: the dashboard shows nothing newer. */
+    val latestComplete: Flow<java.time.YearMonth?> = coverage.map { ca.emarshall.finance.core.statements.MonthCompleteness.latestComplete(it) }
+
     val byAccount: Flow<List<AccountStatements>> = combine(accounts.accounts, db.imports().observeBatches()) { accs, batches ->
         val today = LocalDate.now()
         accs.filter { it.questradeNumber == null }.map { a ->

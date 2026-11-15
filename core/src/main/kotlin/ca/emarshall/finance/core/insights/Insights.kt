@@ -3,6 +3,7 @@ package ca.emarshall.finance.core.insights
 import ca.emarshall.finance.core.analytics.AccountBalance
 import ca.emarshall.finance.core.analytics.Analytics
 import ca.emarshall.finance.core.analytics.TxFact
+import ca.emarshall.finance.core.analytics.forCashFlow
 import ca.emarshall.finance.core.model.CategoryKind
 import ca.emarshall.finance.core.money.Money
 import ca.emarshall.finance.core.recurring.RecurringSeries
@@ -43,8 +44,10 @@ object InsightEngine {
         balances: List<AccountBalance>,
         accountNames: Map<Long, String>,
         today: LocalDate,
+        /** Latest month whose statements are all in; month-level checks wait for it. */
+        completeThrough: YearMonth? = YearMonth.from(today).minusMonths(1),
     ): List<Insight> {
-        val home = facts.filter { it.currency == "CAD" }
+        val home = facts.mapNotNull { it.forCashFlow() }.filter { it.currency == "CAD" }
         val spend = home.filter { it.kind == CategoryKind.EXPENSE && !it.countsAsTransfer && it.amountCents < 0 }
         val out = ArrayList<Insight>()
         out += largeCharges(spend, today)
@@ -54,7 +57,7 @@ object InsightEngine {
         out += categorySpikes(spend, today)
         out += feesAndInterest(home, accountNames, today)
         out += negativeBalances(balances, today)
-        out += spentMoreThanEarned(home, today)
+        if (completeThrough != null) out += spentMoreThanEarned(home, completeThrough)
         out += paychequeLate(home, today)
         return out.sortedWith(compareByDescending<Insight> { it.severity }.thenByDescending { it.date })
     }
@@ -192,8 +195,7 @@ object InsightEngine {
         }
 
     /** Last complete month: spending above income. */
-    private fun spentMoreThanEarned(facts: List<TxFact>, today: LocalDate): List<Insight> {
-        val month = YearMonth.from(today).minusMonths(1)
+    private fun spentMoreThanEarned(facts: List<TxFact>, month: YearMonth): List<Insight> {
         val t = Analytics(facts).monthTotals(month)
         if (t.incomeCents <= 0 || t.spendingCents <= t.incomeCents) return emptyList()
         return listOf(

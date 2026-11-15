@@ -48,10 +48,12 @@ class ExportRepository @Inject constructor(
     private val categories: CategoryRepository,
     private val reminders: ReminderScheduler,
     private val statementFiles: ca.emarshall.finance.statements.StatementFileStore,
+    private val statements: StatementsRepository,
 ) {
     /** The Markdown report for pasting into Claude. Nicknames only; numbers masked. */
     suspend fun summaryMarkdown(months: Int): String = withContext(Dispatchers.Default) {
-        val today = LocalDate.now()
+        // End at the latest month whose statements are all in, so a half-imported month never skews the advice.
+        val today = statements.latestComplete.first()?.atEndOfMonth() ?: LocalDate.now()
         val from = YearMonth.from(today).minusMonths((months - 1).toLong()).atDay(1)
         val accs = accounts.all()
         val byId = accs.associateBy { it.id }

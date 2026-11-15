@@ -90,6 +90,14 @@ fun OverviewScreen(nav: NavController, vm: OverviewViewModel = hiltViewModel()) 
 
         if (!s.loading && s.hasTransactions) {
             item { Hero(s, vm::previousMonth, vm::nextMonth) }
+            val done = s.completeThrough
+            if (done != null && s.month == done && s.waitingOn.isNotEmpty()) item {
+                Text(
+                    "${done.plusMonths(1).month.name.lowercase().replaceFirstChar { it.uppercase() }} appears once all statements are in. " +
+                        "Waiting on: ${s.waitingOn.joinToString(", ")}.",
+                    Modifier.padding(horizontal = 4.dp), style = MaterialTheme.typography.bodySmall, color = Fin.palette.secondaryLabel,
+                )
+            }
 
             if (attention.first.isNotEmpty() || attention.second > 0 || stale > 0) item {
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -132,6 +140,11 @@ fun OverviewScreen(nav: NavController, vm: OverviewViewModel = hiltViewModel()) 
                         }
                     }
                 }
+            }
+
+            if (s.ytd.isNotEmpty()) {
+                item { SectionHeader("${s.ytdYear} so far") }
+                item { YtdDonutCard(s) }
             }
 
             if (s.series.any { it.incomeCents != 0L || it.spendingCents != 0L }) {
@@ -181,8 +194,9 @@ private fun Hero(s: OverviewState, onPrev: () -> Unit, onNext: () -> Unit) {
             }
             Text(s.month.pretty(), Modifier.weight(1f), color = white, style = MaterialTheme.typography.titleSmall,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-            IconButton(onClick = onNext, enabled = s.month < YearMonth.now(), modifier = Modifier.size(32.dp)) {
-                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Next month", tint = if (s.month < YearMonth.now()) white else white.copy(alpha = 0.3f))
+            val canNext = s.month < (s.completeThrough ?: YearMonth.now())
+            IconButton(onClick = onNext, enabled = canNext, modifier = Modifier.size(32.dp)) {
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Next month", tint = if (canNext) white else white.copy(alpha = 0.3f))
             }
         }
         Spacer(Modifier.height(4.dp))
@@ -371,6 +385,51 @@ private fun LiquidCard(b: ca.emarshall.finance.core.analytics.NetWorthBreakdown,
         val oldest = b.segments.minOfOrNull { it.position.asOf }
         if (oldest != null && oldest.isBefore(java.time.LocalDate.now().minusDays(35))) {
             Text("Some balances are from ${oldest.format(SHORT_DAY)} — import newer statements to update.", style = MaterialTheme.typography.bodySmall, color = p.warning)
+        }
+    }
+}
+
+/** Year-to-date spending by category as a donut: top six categories plus "Everything else". */
+@Composable
+private fun YtdDonutCard(s: OverviewState) {
+    val p = Fin.palette
+    val total = s.ytd.sumOf { it.cents }.coerceAtLeast(1)
+    val top = s.ytd.take(6)
+    val rest = s.ytd.drop(6).sumOf { it.cents }
+    val slices = top.map { it.categoryName to it.cents } + if (rest > 0) listOf("Everything else" to rest) else emptyList()
+    val colors = slices.indices.map { i -> if (i < 6) p.chart[i % p.chart.size] else p.tertiaryLabel }
+    FinCard {
+        androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().height(210.dp), contentAlignment = Alignment.Center) {
+            val track = p.cardSecondary
+            androidx.compose.foundation.Canvas(Modifier.size(200.dp)) {
+                val stroke = 30.dp.toPx()
+                val inset = stroke / 2
+                val arcSize = androidx.compose.ui.geometry.Size(size.width - stroke, size.height - stroke)
+                val topLeft = androidx.compose.ui.geometry.Offset(inset, inset)
+                drawArc(track, 0f, 360f, false, topLeft, arcSize, style = androidx.compose.ui.graphics.drawscope.Stroke(stroke))
+                val gap = if (slices.size > 1) 1.6f else 0f
+                var start = -90f
+                slices.forEachIndexed { i, (_, cents) ->
+                    val sweep = 360f * cents / total
+                    if (sweep > gap) drawArc(colors[i], start + gap / 2, sweep - gap, false, topLeft, arcSize,
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(stroke, cap = androidx.compose.ui.graphics.StrokeCap.Butt))
+                    start += sweep
+                }
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("Spent", style = MaterialTheme.typography.bodySmall, color = p.secondaryLabel)
+                Text(Money.formatWhole(s.ytd.sumOf { it.cents }), style = MaterialTheme.typography.titleLarge)
+                s.completeThrough?.let { Text("to ${it.atEndOfMonth().format(SHORT_DAY)}", style = MaterialTheme.typography.bodySmall, color = p.secondaryLabel) }
+            }
+        }
+        slices.forEachIndexed { i, (name, cents) ->
+            val pct = cents * 1000 / total
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                androidx.compose.foundation.layout.Box(Modifier.size(10.dp).clip(androidx.compose.foundation.shape.CircleShape).background(colors[i]))
+                Text(name, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                Text("${pct / 10}.${pct % 10}%", style = MaterialTheme.typography.bodyMedium, color = p.secondaryLabel)
+                Text(Money.formatWhole(cents), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+            }
         }
     }
 }
