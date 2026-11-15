@@ -71,7 +71,44 @@ import ca.emarshall.finance.data.InsightsRepository
 import ca.emarshall.finance.data.StatementsRepository
 import ca.emarshall.finance.data.db.GoalEntity
 import ca.emarshall.finance.data.ruleKey
-import ca.emarshall.finance.ui.BackTopBar
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.ChatBubbleOutline
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.EventNote
+import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.WarningAmber
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
+import androidx.compose.ui.draw.clip
+import ca.emarshall.finance.ui.design.DetailScreen
+import ca.emarshall.finance.ui.design.FinCard
+import ca.emarshall.finance.ui.design.FinTextField
+import ca.emarshall.finance.ui.design.Footnote
+import ca.emarshall.finance.ui.design.Group
+import ca.emarshall.finance.ui.design.GroupRow
+import ca.emarshall.finance.ui.design.HeroCard
+import ca.emarshall.finance.ui.design.IconTile
+import ca.emarshall.finance.ui.design.LargeTitleScreen
+import ca.emarshall.finance.ui.design.MenuRow
+import ca.emarshall.finance.ui.design.NavBar
+import ca.emarshall.finance.ui.design.Notice
+import ca.emarshall.finance.ui.design.NoticeTone
+import ca.emarshall.finance.ui.design.PrimaryButton
+import ca.emarshall.finance.ui.design.SecondaryButton
+import ca.emarshall.finance.ui.design.SectionHeader
+import ca.emarshall.finance.ui.pretty
+import ca.emarshall.finance.ui.theme.Fin
 import ca.emarshall.finance.ui.ClaudeChatRoute
 import ca.emarshall.finance.ui.ClaudeSetupRoute
 import ca.emarshall.finance.ui.GoalEditRoute
@@ -124,7 +161,6 @@ class InsightsViewModel @Inject constructor(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun InsightsScreen(nav: NavController, vm: InsightsViewModel = hiltViewModel()) {
     val insights by vm.visible.collectAsStateWithLifecycle()
@@ -135,119 +171,164 @@ fun InsightsScreen(nav: NavController, vm: InsightsViewModel = hiltViewModel()) 
     val aiLabel = vm.aiConfig.collectAsStateWithLifecycle().value?.let { "${it.label.substringBefore(" (")} · ${it.model}" } ?: ""
     val busy by vm.busy.collectAsStateWithLifecycle()
     val message by vm.message.collectAsStateWithLifecycle()
+    val p = Fin.palette
 
-    Column(Modifier.fillMaxSize()) {
-        Text("Insights", Modifier.statusBarsPadding().padding(start = 16.dp, top = 12.dp, bottom = 4.dp), style = MaterialTheme.typography.headlineLarge)
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            // ---- Unusual activity (on-device) ----
-            SectionCard("Needs attention") {
-                val list = insights
-                when {
-                    list == null -> Unit
-                    list.isEmpty() -> Text("Nothing unusual in the last few weeks.")
-                    else -> list.forEach { i -> InsightRow(i, claudeOn, nav, onDismiss = { vm.dismiss(i) }) }
+    LargeTitleScreen("Insights") {
+        // ---- AI coach (opt-in) ----
+        item {
+            HeroCard(p.heroGradient, onClick = if (claudeOn) null else ({ nav.navigate(ClaudeSetupRoute) })) {
+                val white = Color.White
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = white, modifier = Modifier.size(20.dp))
+                    Text("AI coach", color = white, style = MaterialTheme.typography.titleMedium)
                 }
-                Text("Checked on your phone after every import. Nothing is sent anywhere.", style = MaterialTheme.typography.bodySmall)
-            }
-
-            // ---- Missing statements ----
-            val missing = statements.flatMap { a -> a.missing.map { a.account.nickname to it } }
-            SectionCard("Statements") {
-                if (missing.isEmpty()) Text(if (statements.any { it.imported.isNotEmpty() }) "All expected statements are imported." else "Import a statement to start tracking.")
-                missing.take(5).forEach { (name, m) ->
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error)
-                        Text("$name: statement ending ${m.periodEnd} is missing")
-                    }
-                }
-                TextButton(onClick = { nav.navigate(StatementsRoute) }) { Text("Open statement library") }
-            }
-
-            // ---- Goals ----
-            SectionCard("Goals") {
-                if (goals.isEmpty()) Text("No goals yet. Add one, or ask your AI coach to suggest some.")
-                goals.forEach { g ->
-                    Column(Modifier.fillMaxWidth().clickable { nav.navigate(GoalEditRoute(g.entity.id)) }.padding(vertical = 6.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(g.entity.title, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
-                            Text(statusLabel(g.progress.status), color = statusColor(g.progress.status), style = MaterialTheme.typography.labelLarge)
-                        }
-                        LinearProgressIndicator(
-                            progress = { (g.progress.percent.coerceIn(0, 100)) / 100f },
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                            color = statusColor(g.progress.status),
-                        )
-                        Text(g.progress.headline, style = MaterialTheme.typography.bodyMedium)
-                        Text(g.progress.detail, style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-                OutlinedButton(onClick = { nav.navigate(GoalEditRoute()) }) { Text("Add a goal") }
-            }
-
-            // ---- AI coach (opt-in) ----
-            SectionCard("AI coach") {
                 if (!claudeOn) {
-                    Text("Get feedback on your month, goal suggestions, and answers to questions about your money from the AI of your choice. Off until you turn it on.")
-                    Button(onClick = { nav.navigate(ClaudeSetupRoute) }) { Text("Set up AI coach") }
+                    Text("Feedback on your month, goal ideas and answers about your money, from the AI you choose. Off until you turn it on.",
+                        color = white.copy(alpha = 0.85f), style = MaterialTheme.typography.bodyMedium)
+                    Text("Set up ›", color = white, style = MaterialTheme.typography.labelLarge)
                 } else {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = vm::runCheckIn, enabled = !busy) { Text("Monthly check-in") }
-                        OutlinedButton(onClick = { nav.navigate(ClaudeChatRoute()) }) { Text("Ask") }
+                    Text(if (checkIn == null) "Get a read on how this month is going." else "Your latest check-in is below.",
+                        color = white.copy(alpha = 0.85f), style = MaterialTheme.typography.bodyMedium)
+                    Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        HeroButton(if (busy) "Reading…" else "Monthly check-in", Modifier.weight(1f), enabled = !busy, onClick = vm::runCheckIn)
+                        HeroButton("Ask", Modifier.weight(1f)) { nav.navigate(ClaudeChatRoute()) }
                     }
-                    if (busy) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        CircularProgressIndicator(); Text("Reading your summary…")
-                    }
-                    checkIn?.let { (c, cost) ->
-                        Text(c.summary, style = MaterialTheme.typography.bodyLarge)
-                        if (c.wins.isNotEmpty()) Bullets("Going well", c.wins)
-                        if (c.concerns.isNotEmpty()) Bullets("Watch out for", c.concerns)
-                        if (c.actions.isNotEmpty()) Bullets("This month", c.actions)
-                        c.suggestedGoals.forEach { s ->
-                            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
-                                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Text("Suggested goal: ${s.title}", style = MaterialTheme.typography.titleSmall)
-                                    Text(s.why, style = MaterialTheme.typography.bodySmall)
-                                    TextButton(onClick = { vm.adopt(s) }) { Text("Add this goal") }
-                                }
-                            }
-                        }
-                        Text("${cost.label()} · ${aiLabel}", style = MaterialTheme.typography.labelSmall)
-                    }
-                    TextButton(onClick = { nav.navigate(ClaudeSetupRoute) }) { Text("AI settings & what's shared") }
                 }
-                message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+            }
+        }
+        message?.let { m -> item { Notice(m) } }
+        checkIn?.takeIf { claudeOn }?.let { (c, cost) ->
+            item {
+                FinCard {
+                    Text(c.summary, style = MaterialTheme.typography.bodyLarge)
+                    if (c.wins.isNotEmpty()) Bullets("Going well", c.wins, p.positive)
+                    if (c.concerns.isNotEmpty()) Bullets("Watch out for", c.concerns, p.warning)
+                    if (c.actions.isNotEmpty()) Bullets("This month", c.actions, p.accent)
+                    Text("${cost.label()} · $aiLabel", style = MaterialTheme.typography.labelSmall, color = p.tertiaryLabel)
+                }
+            }
+            if (c.suggestedGoals.isNotEmpty()) {
+                item { SectionHeader("Suggested goals") }
+                item {
+                    Group {
+                        c.suggestedGoals.forEachIndexed { i, s ->
+                            GroupRow(s.title, subtitle = s.why, icon = Icons.Default.Flag, iconColor = p.chart[4], divider = i < c.suggestedGoals.size - 1,
+                                trailing = { TextButton(onClick = { vm.adopt(s) }) { Text("Add") } })
+                        }
+                    }
+                }
+            }
+        }
+
+        // ---- Unusual activity (on-device) ----
+        item { SectionHeader("Needs attention") }
+        item {
+            val list = insights
+            when {
+                list == null -> Unit
+                list.isEmpty() -> Group { GroupRow("Nothing unusual lately", icon = Icons.Default.CheckCircle, iconColor = p.positive, divider = false) }
+                else -> Group { list.forEachIndexed { i, ins -> InsightRow(ins, claudeOn, nav, divider = i < list.size - 1, onDismiss = { vm.dismiss(ins) }) } }
+            }
+        }
+        item { Footnote("Checked on your phone after every import. Nothing is sent anywhere.") }
+
+        // ---- Goals ----
+        item { SectionHeader("Goals", "Add") { nav.navigate(GoalEditRoute()) } }
+        item {
+            if (goals.isEmpty()) {
+                Group {
+                    GroupRow("Add a goal", subtitle = "Save for something, cap a category, or hit a savings rate", icon = Icons.Default.Flag,
+                        iconColor = p.chart[4], showChevron = true, divider = false, onClick = { nav.navigate(GoalEditRoute()) })
+                }
+            } else {
+                Group {
+                    goals.forEachIndexed { i, g ->
+                        Column(Modifier.fillMaxWidth().clickable { nav.navigate(GoalEditRoute(g.entity.id)) }.padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(g.entity.title, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+                                Text(statusLabel(g.progress.status), color = statusColor(g.progress.status), style = MaterialTheme.typography.labelMedium)
+                            }
+                            LinearProgressIndicator(
+                                progress = { (g.progress.percent.coerceIn(0, 100)) / 100f },
+                                modifier = Modifier.fillMaxWidth().height(6.dp).clip(CircleShape),
+                                color = statusColor(g.progress.status), trackColor = p.cardSecondary, drawStopIndicator = {}, gapSize = 0.dp,
+                            )
+                            Text(g.progress.headline, style = MaterialTheme.typography.bodyMedium)
+                            Text(g.progress.detail, style = MaterialTheme.typography.bodySmall, color = p.secondaryLabel)
+                        }
+                        if (i < goals.size - 1) HorizontalDivider(Modifier.padding(start = 16.dp), color = p.separator, thickness = 0.5.dp)
+                    }
+                }
+            }
+        }
+
+        // ---- Missing statements ----
+        val missing = statements.flatMap { a -> a.missing.map { a.account.nickname to it } }
+        item { SectionHeader("Statements", "Library") { nav.navigate(StatementsRoute) } }
+        item {
+            Group {
+                if (missing.isEmpty()) {
+                    GroupRow(
+                        if (statements.any { it.imported.isNotEmpty() }) "All statements are in" else "Import a statement to start tracking",
+                        icon = Icons.Default.CheckCircle, iconColor = p.positive, divider = false, onClick = { nav.navigate(StatementsRoute) },
+                    )
+                }
+                missing.take(5).forEachIndexed { i, (name, m) ->
+                    GroupRow("$name", subtitle = "Statement ending ${m.periodEnd.pretty()} is missing", icon = Icons.Default.WarningAmber, iconColor = p.warning,
+                        showChevron = true, divider = i < minOf(missing.size, 5) - 1, onClick = { nav.navigate(StatementsRoute) })
+                }
+            }
+        }
+        if (claudeOn) item {
+            Group { GroupRow("AI settings & what's shared", icon = Icons.Default.Settings, iconColor = Color(0xFF8E8E93), showChevron = true, divider = false, onClick = { nav.navigate(ClaudeSetupRoute) }) }
+        }
+    }
+}
+
+/** White-on-gradient button for hero cards. */
+@Composable
+private fun HeroButton(text: String, modifier: Modifier = Modifier, enabled: Boolean = true, onClick: () -> Unit) {
+    Box(
+        modifier.height(42.dp).clip(RoundedCornerShape(12.dp)).background(Color.White.copy(alpha = if (enabled) 0.22f else 0.12f))
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { Text(text, color = Color.White, style = MaterialTheme.typography.labelLarge) }
+}
+
+@Composable
+private fun Bullets(title: String, items: List<String>, color: Color) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(title, style = MaterialTheme.typography.labelLarge, color = color)
+        items.forEach { t ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(Modifier.padding(top = 7.dp).size(6.dp).clip(CircleShape).background(color))
+                Text(t, style = MaterialTheme.typography.bodyMedium)
             }
         }
     }
 }
 
 @Composable
-private fun Bullets(title: String, items: List<String>) {
-    Text(title, style = MaterialTheme.typography.labelLarge)
-    items.forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium) }
-}
-
-@Composable
-private fun InsightRow(i: Insight, claudeOn: Boolean, nav: NavController, onDismiss: () -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ca.emarshall.finance.ui.design.IconTile(
-                when (i.severity) { Severity.ALERT -> Icons.Default.ErrorOutline; Severity.WARNING -> Icons.Default.Warning; Severity.INFO -> Icons.Default.Info },
-                when (i.severity) {
-                    Severity.ALERT -> ca.emarshall.finance.ui.theme.Fin.palette.negative
-                    Severity.WARNING -> Color(0xFFFF9F0A)
-                    Severity.INFO -> ca.emarshall.finance.ui.theme.Fin.palette.accent
-                },
-                size = 28.dp,
+private fun InsightRow(i: Insight, claudeOn: Boolean, nav: NavController, divider: Boolean, onDismiss: () -> Unit) {
+    val p = Fin.palette
+    Column {
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            IconTile(
+                when (i.severity) { Severity.ALERT -> Icons.Default.ErrorOutline; Severity.WARNING -> Icons.Default.WarningAmber; Severity.INFO -> Icons.Default.Info },
+                when (i.severity) { Severity.ALERT -> p.negative; Severity.WARNING -> p.warning; Severity.INFO -> p.accent },
             )
-            Text(i.title, style = MaterialTheme.typography.titleSmall)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(i.title, style = MaterialTheme.typography.bodyLarge)
+                Text(i.detail, style = MaterialTheme.typography.bodySmall, color = p.secondaryLabel)
+                Row(Modifier.horizontalScroll(rememberScrollState()).padding(start = 0.dp)) {
+                    i.transactionIds.firstOrNull()?.let { id -> TextButton(onClick = { nav.navigate(TransactionRoute(id)) }) { Text("View") } }
+                    if (claudeOn) TextButton(onClick = { nav.navigate(ClaudeChatRoute("Can you explain this and what I should do? \"${i.title}: ${i.detail}\"")) }) { Text("Ask AI") }
+                    TextButton(onClick = onDismiss) { Text("Dismiss", color = p.secondaryLabel) }
+                }
+            }
         }
-        Text(i.detail, style = MaterialTheme.typography.bodyMedium)
-        Row(Modifier.horizontalScroll(rememberScrollState())) {
-            i.transactionIds.firstOrNull()?.let { id -> TextButton(onClick = { nav.navigate(TransactionRoute(id)) }) { Text("View") } }
-            if (claudeOn) TextButton(onClick = { nav.navigate(ClaudeChatRoute("Can you explain this and what I should do? \"${i.title}: ${i.detail}\"")) }) { Text("Ask AI") }
-            TextButton(onClick = onDismiss) { Text("Dismiss") }
-        }
+        if (divider) HorizontalDivider(Modifier.padding(start = 58.dp), color = p.separator, thickness = 0.5.dp)
     }
 }
 
@@ -257,9 +338,9 @@ private fun statusLabel(s: GoalStatus) = when (s) {
 
 @Composable
 private fun statusColor(s: GoalStatus) = when (s) {
-    GoalStatus.ON_TRACK, GoalStatus.DONE -> MaterialTheme.colorScheme.primary
-    GoalStatus.AT_RISK -> Color(0xFFE6A100)
-    GoalStatus.OFF_TRACK -> MaterialTheme.colorScheme.error
+    GoalStatus.ON_TRACK, GoalStatus.DONE -> Fin.palette.positive
+    GoalStatus.AT_RISK -> Fin.palette.warning
+    GoalStatus.OFF_TRACK -> Fin.palette.negative
 }
 
 // ------------------------------------------------------------------ goal editor
@@ -302,55 +383,63 @@ fun GoalEditScreen(nav: NavController, vm: GoalEditViewModel = hiltViewModel()) 
     var category by remember(existing) { mutableStateOf(existing?.categoryKey) }
 
     val expenseCats = cats.filter { it.kind == "EXPENSE" }
-    Column(Modifier.fillMaxSize()) {
-        BackTopBar(if (vm.id == null) "New goal" else "Edit goal", onBack = { nav.popBackStack() })
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Picker(
-                "Kind of goal", type, GoalType.entries,
-                { when (it) { GoalType.SAVE_AMOUNT -> "Save an amount by a date"; GoalType.SPEND_LIMIT -> "Monthly spending limit for a category"; GoalType.SAVINGS_RATE -> "Savings rate (% of income)" } },
-                { type = it }, Modifier.fillMaxWidth(),
-            )
-            OutlinedTextField(title, { title = it }, Modifier.fillMaxWidth(), label = { Text("Name (e.g. Emergency fund)") }, singleLine = true)
-            when (type) {
-                GoalType.SAVE_AMOUNT -> {
-                    OutlinedTextField(amount, { amount = it }, Modifier.fillMaxWidth(), label = { Text("Amount to save ($)") }, singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-                    if (existing == null) OutlinedTextField(months, { months = it.filter(Char::isDigit) }, Modifier.fillMaxWidth(), label = { Text("Months from now") }, singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-                    Text("Progress counts money saved (income minus spending) from the start of this month.", style = MaterialTheme.typography.bodySmall)
-                }
-                GoalType.SPEND_LIMIT -> {
-                    Picker("Category", expenseCats.firstOrNull { it.ruleKey == category }, expenseCats, { it.name }, { category = it.ruleKey }, Modifier.fillMaxWidth())
-                    OutlinedTextField(amount, { amount = it }, Modifier.fillMaxWidth(), label = { Text("Monthly limit ($)") }, singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-                }
-                GoalType.SAVINGS_RATE -> OutlinedTextField(percent, { percent = it.filter(Char::isDigit).take(2) }, Modifier.fillMaxWidth(),
-                    label = { Text("Target savings rate (%)") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+    val number = KeyboardOptions(keyboardType = KeyboardType.Number)
+    DetailScreen(if (vm.id == null) "New goal" else "Edit goal", onBack = { nav.popBackStack() }) {
+        item {
+            Group {
+                MenuRow(
+                    "Kind", type, GoalType.entries,
+                    { when (it) { GoalType.SAVE_AMOUNT -> "Save an amount"; GoalType.SPEND_LIMIT -> "Spending limit"; GoalType.SAVINGS_RATE -> "Savings rate" } },
+                    { type = it }, divider = false,
+                )
             }
-            existing?.note?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-            val cents = dollarsToCents(amount)
-            val valid = title.isNotBlank() && when (type) {
-                GoalType.SAVE_AMOUNT -> cents != null && cents > 0
-                GoalType.SPEND_LIMIT -> cents != null && cents > 0 && category != null
-                GoalType.SAVINGS_RATE -> percent.toIntOrNull() in 1..90
-            }
-            Button(
-                onClick = {
-                    val today = LocalDate.now()
-                    vm.save(
-                        (existing ?: GoalEntity(type = type.name, title = title, start = today.withDayOfMonth(1))).copy(
-                            type = type.name, title = title.trim(),
-                            targetCents = if (type == GoalType.SAVINGS_RATE) null else cents,
-                            targetPercent = if (type == GoalType.SAVINGS_RATE) percent.toIntOrNull() else null,
-                            categoryKey = if (type == GoalType.SPEND_LIMIT) category else null,
-                            deadline = if (type == GoalType.SAVE_AMOUNT) existing?.deadline ?: today.plusMonths((months.toLongOrNull() ?: 12).coerceIn(1, 600)) else null,
-                        ),
-                    )
-                },
-                enabled = valid, modifier = Modifier.fillMaxWidth(),
-            ) { Text("Save goal") }
-            if (vm.id != null) OutlinedButton(onClick = vm::delete, modifier = Modifier.fillMaxWidth()) { Text("Delete goal") }
         }
+        item {
+            FinCard {
+                FinTextField(title, { title = it }, "Name", placeholder = "e.g. Emergency fund")
+                when (type) {
+                    GoalType.SAVE_AMOUNT -> {
+                        FinTextField(amount, { amount = it }, "Amount to save ($)", keyboardOptions = number)
+                        if (existing == null) FinTextField(months, { months = it.filter(Char::isDigit) }, "Months from now", keyboardOptions = number)
+                    }
+                    GoalType.SPEND_LIMIT -> {
+                        Picker("Category", expenseCats.firstOrNull { it.ruleKey == category }, expenseCats, { it.name }, { category = it.ruleKey }, Modifier.fillMaxWidth())
+                        FinTextField(amount, { amount = it }, "Monthly limit ($)", keyboardOptions = number)
+                    }
+                    GoalType.SAVINGS_RATE -> FinTextField(percent, { percent = it.filter(Char::isDigit).take(2) }, "Target savings rate (%)", keyboardOptions = number)
+                }
+            }
+        }
+        item {
+            Footnote(
+                when (type) {
+                    GoalType.SAVE_AMOUNT -> "Progress counts money saved (income minus spending) from the start of this month."
+                    GoalType.SPEND_LIMIT -> "Checked against each complete month's spending in that category."
+                    GoalType.SAVINGS_RATE -> "The share of income left after spending, each complete month."
+                } + (existing?.note?.let { " $it" } ?: ""),
+            )
+        }
+        val cents = dollarsToCents(amount)
+        val valid = title.isNotBlank() && when (type) {
+            GoalType.SAVE_AMOUNT -> cents != null && cents > 0
+            GoalType.SPEND_LIMIT -> cents != null && cents > 0 && category != null
+            GoalType.SAVINGS_RATE -> percent.toIntOrNull() in 1..90
+        }
+        item {
+            PrimaryButton("Save goal", {
+                val today = LocalDate.now()
+                vm.save(
+                    (existing ?: GoalEntity(type = type.name, title = title, start = today.withDayOfMonth(1))).copy(
+                        type = type.name, title = title.trim(),
+                        targetCents = if (type == GoalType.SAVINGS_RATE) null else cents,
+                        targetPercent = if (type == GoalType.SAVINGS_RATE) percent.toIntOrNull() else null,
+                        categoryKey = if (type == GoalType.SPEND_LIMIT) category else null,
+                        deadline = if (type == GoalType.SAVE_AMOUNT) existing?.deadline ?: today.plusMonths((months.toLongOrNull() ?: 12).coerceIn(1, 600)) else null,
+                    ),
+                )
+            }, enabled = valid)
+        }
+        if (vm.id != null) item { SecondaryButton("Delete goal", vm::delete, destructive = true) }
     }
 }
 
@@ -382,61 +471,73 @@ fun ClaudeSetupScreen(nav: NavController, vm: ClaudeSetupViewModel = hiltViewMod
     var key by remember { mutableStateOf("") }
     var agreed by remember { mutableStateOf(false) }
     val chosenHost = if (preset.kind == AiKind.ANTHROPIC) "api.anthropic.com" else runCatching { java.net.URI(baseUrl).host }.getOrNull() ?: "your provider"
-    Column(Modifier.fillMaxSize()) {
-        BackTopBar("AI coach", onBack = { nav.popBackStack() })
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            SectionCard("What it does") {
-                Text("• Monthly check-in: feedback on how your month went, and goal suggestions you can add with one tap.")
-                Text("• Ask: questions about your spending, saving, TFSA/RRSP/FHSA, or anything the app flagged.")
-                Text("Use any AI you like: Claude, ChatGPT, Gemini, Mistral, DeepSeek, Groq, OpenRouter or any OpenAI-compatible service. " +
-                    "Unusual-activity warnings and goal tracking work without it; they run on your phone.", style = MaterialTheme.typography.bodySmall)
+    val p = Fin.palette
+    DetailScreen("AI coach", onBack = { nav.popBackStack() }) {
+        val c = config
+        if (enabled && c != null) {
+            item {
+                Group {
+                    GroupRow("On · ${c.label.substringBefore(" (")}", subtitle = "${c.model} · connects to ${c.host}", icon = Icons.Default.AutoAwesome, iconColor = p.accent, divider = false)
+                }
             }
-            SectionCard("What's shared, and when") {
-                Text("Only when you tap Check-in or send a question, the app sends the AI provider you choose a text summary of your finances: " +
-                    "account nicknames, monthly totals, categories, merchants, bills, balances, holdings, flagged items and goals. " +
-                    "Account and card numbers are never included. Nothing is sent in the background.")
-                Text("This is an exception to the app's \"only Questrade\" network rule: while it's on, the app may also reach your chosen " +
-                    "provider's server (HTTPS only), under that provider's API terms. Chats are kept in memory only and disappear when you close the app.",
-                    style = MaterialTheme.typography.bodySmall)
-                OutlinedButton(onClick = vm::loadPreview) { Text(if (preview == null) "Show exactly what's sent" else "Refresh preview") }
+            item { SecondaryButton("Turn off and delete my API key", vm::disable, destructive = true) }
+            item { Footnote("To switch to a different AI, turn it off and set it up again.") }
+        }
+        item { SectionHeader("What it does") }
+        item {
+            Group {
+                GroupRow("Monthly check-in", subtitle = "Feedback on your month, and goal ideas you can add with one tap", icon = Icons.Default.EventNote, iconColor = p.chart[0])
+                GroupRow("Ask", subtitle = "Spending, saving, TFSA/RRSP/FHSA, or anything the app flagged", icon = Icons.Default.ChatBubbleOutline, iconColor = p.chart[2], divider = false)
+            }
+        }
+        item { Footnote("Works with Claude, ChatGPT, Gemini, Mistral, DeepSeek, Groq, OpenRouter or any OpenAI-compatible service. Unusual-activity warnings and goals work without it.") }
+        item { SectionHeader("What's shared, and when") }
+        item {
+            FinCard {
+                Text(
+                    "Only when you tap Check-in or send a question, the app sends your chosen provider a text summary: account nicknames, monthly totals, " +
+                        "categories, merchants, bills, balances, holdings, flagged items and goals. Never account or card numbers. Nothing is sent in the background.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    "While it's on, the app may also reach that provider's server (HTTPS only), under its API terms. Chats are kept in memory only.",
+                    style = MaterialTheme.typography.bodySmall, color = p.secondaryLabel,
+                )
+                SecondaryButton(if (preview == null) "Show exactly what's sent" else "Refresh preview", vm::loadPreview)
                 preview?.let {
-                    Text(it, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall, modifier = Modifier.horizontalScroll(rememberScrollState()))
+                    Text(it, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall, color = p.secondaryLabel,
+                        modifier = Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()).horizontalScroll(rememberScrollState()))
                 }
             }
-            val c = config
-            if (enabled && c != null) {
-                SectionCard("On") {
-                    Text("${c.label} · ${c.model}", style = MaterialTheme.typography.titleMedium)
-                    Text("Connects to ${c.host}", style = MaterialTheme.typography.bodySmall)
-                }
-                OutlinedButton(onClick = vm::disable, modifier = Modifier.fillMaxWidth()) { Text("Turn off and delete my API key") }
-                Text("To switch to a different AI, turn it off and set it up again.", style = MaterialTheme.typography.bodySmall)
-            } else {
-                SectionCard("Choose your AI") {
-                    Picker("Provider", preset, AiPresets.ALL, { it.label }, { preset = it }, Modifier.fillMaxWidth())
-                    if (preset.kind == AiKind.OPENAI_COMPATIBLE) {
-                        OutlinedTextField(baseUrl, { baseUrl = it.trim() }, Modifier.fillMaxWidth(), label = { Text("API address (https://…/v1)") }, singleLine = true)
-                    }
-                    OutlinedTextField(model, { model = it.trim() }, Modifier.fillMaxWidth(), label = { Text("Model name") }, singleLine = true,
-                        supportingText = { Text(if (preset.kind == AiKind.ANTHROPIC) "Default: claude-opus-5-5" else "Exactly as your provider lists it") })
-                    OutlinedTextField(key, { key = it.trim() }, Modifier.fillMaxWidth(), label = { Text("API key") }, singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(), supportingText = { Text("Get one at ${preset.keyHelp}") })
-                    Text("API use is billed by your provider; a check-in is usually a few cents. Chat subscriptions (Claude.ai, ChatGPT Plus) " +
-                        "don't include API use.", style = MaterialTheme.typography.bodySmall)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+        }
+        if (!(enabled && c != null)) {
+            item { SectionHeader("Choose your AI") }
+            item {
+                Group { MenuRow("Provider", preset, AiPresets.ALL, { it.label }, { preset = it }, divider = false) }
+            }
+            item {
+                FinCard {
+                    if (preset.kind == AiKind.OPENAI_COMPATIBLE) FinTextField(baseUrl, { baseUrl = it.trim() }, "API address (https://…/v1)")
+                    FinTextField(model, { model = it.trim() }, "Model name", placeholder = if (preset.kind == AiKind.ANTHROPIC) "claude-opus-5-5" else "Exactly as your provider lists it")
+                    FinTextField(key, { key = it.trim() }, "API key", visualTransformation = PasswordVisualTransformation())
+                    Text("Get a key at ${preset.keyHelp}. API use is billed by your provider (a check-in is usually a few cents); chat subscriptions don't include it.",
+                        style = MaterialTheme.typography.bodySmall, color = p.secondaryLabel)
+                    Row(Modifier.fillMaxWidth().clickable { agreed = !agreed }, verticalAlignment = Alignment.CenterVertically) {
                         androidx.compose.material3.Checkbox(agreed, { agreed = it })
-                        Text("I understand my financial summary is sent to $chosenHost when I use these features.")
+                        Text("I understand my financial summary is sent to $chosenHost when I use these features.", style = MaterialTheme.typography.bodyMedium)
                     }
-                    Button(
-                        onClick = { vm.enable(AiConfig(preset.kind, preset.label, baseUrl, model.ifBlank { preset.defaultModel }), key); key = "" },
-                        enabled = agreed && key.length >= 10 && (model.isNotBlank() || preset.defaultModel.isNotBlank()) &&
-                            (preset.kind == AiKind.ANTHROPIC || baseUrl.startsWith("https://")),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text("Turn on AI coach") }
-                    error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                    Text("The key is stored encrypted on this phone, like your Questrade token.", style = MaterialTheme.typography.bodySmall)
                 }
             }
+            error?.let { e -> item { Notice(e, NoticeTone.ERROR) } }
+            item {
+                PrimaryButton(
+                    "Turn on AI coach",
+                    { vm.enable(AiConfig(preset.kind, preset.label, baseUrl, model.ifBlank { preset.defaultModel }), key); key = "" },
+                    enabled = agreed && key.length >= 10 && (model.isNotBlank() || preset.defaultModel.isNotBlank()) &&
+                        (preset.kind == AiKind.ANTHROPIC || baseUrl.startsWith("https://")),
+                )
+            }
+            item { Footnote("The key is stored encrypted on this phone, like your Questrade token.") }
         }
     }
 }
@@ -494,38 +595,46 @@ fun ClaudeChatScreen(nav: NavController, vm: ClaudeChatViewModel = hiltViewModel
     val listState = rememberLazyListState()
     LaunchedEffect(lines.size, lines.lastOrNull()?.text?.length) { if (lines.isNotEmpty()) listState.animateScrollToItem(lines.size - 1) }
 
-    Column(Modifier.fillMaxSize().imePadding()) {
-        BackTopBar("Ask ${vm.aiLabel.collectAsStateWithLifecycle().value?.label?.substringBefore(" (") ?: "AI"}", onBack = { nav.popBackStack() }, actions = { TextButton(onClick = vm::newChat, enabled = !streaming) { Text("New chat") } })
-        LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp), state = listState, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (lines.isEmpty()) item {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("The AI sees your privacy-filtered summary. Try:", style = MaterialTheme.typography.bodyMedium)
-                    listOf(
-                        "Where could I cut \$200 a month without much pain?",
-                        "Should my next \$5,000 go to my TFSA, RRSP or FHSA?",
-                        "Are any of my subscriptions worth cancelling?",
-                        "How long until I have a 3-month emergency fund?",
-                    ).forEach { s -> TextButton(onClick = { vm.send(s) }) { Text(s) } }
+    val p = Fin.palette
+    Column(Modifier.fillMaxSize().background(p.background).imePadding()) {
+        NavBar("Ask ${vm.aiLabel.collectAsStateWithLifecycle().value?.label?.substringBefore(" (") ?: "AI"}", onBack = { nav.popBackStack() }) {
+            TextButton(onClick = vm::newChat, enabled = !streaming && lines.isNotEmpty()) { Text("New chat") }
+        }
+        LazyColumn(
+            Modifier.weight(1f).fillMaxWidth(), state = listState,
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            if (lines.isEmpty()) {
+                item { Footnote("The AI sees your privacy-filtered summary. Try one of these:") }
+                item {
+                    Group {
+                        val ideas = listOf(
+                            "Where could I cut \$200 a month without much pain?",
+                            "Should my next \$5,000 go to my TFSA, RRSP or FHSA?",
+                            "Are any of my subscriptions worth cancelling?",
+                            "How long until I have a 3-month emergency fund?",
+                        )
+                        ideas.forEachIndexed { i, s -> GroupRow(s, showChevron = true, divider = i < ideas.size - 1, onClick = { vm.send(s) }) }
+                    }
                 }
             }
             items(lines) { l ->
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (l.fromUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                    ),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Column(Modifier.padding(12.dp)) {
-                        Text(if (l.fromUser) "You" else "Coach", style = MaterialTheme.typography.labelMedium)
-                        Text(l.text.ifEmpty { "…" }, style = MaterialTheme.typography.bodyMedium)
-                        l.meta?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = if (l.fromUser) Arrangement.End else Arrangement.Start) {
+                    Column(
+                        Modifier.fillMaxWidth(0.86f).wrapContentWidth(if (l.fromUser) Alignment.End else Alignment.Start)
+                            .clip(RoundedCornerShape(18.dp)).background(if (l.fromUser) p.accent else p.card).padding(horizontal = 14.dp, vertical = 10.dp),
+                    ) {
+                        Text(l.text.ifEmpty { "…" }, style = MaterialTheme.typography.bodyMedium, color = if (l.fromUser) Color.White else p.label)
+                        l.meta?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = if (l.fromUser) Color.White.copy(alpha = 0.7f) else p.tertiaryLabel) }
                     }
                 }
             }
         }
-        Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(input, { input = it }, Modifier.weight(1f), placeholder = { Text("Ask about your money") }, maxLines = 4)
-            Button(onClick = { vm.send(input); input = "" }, enabled = !streaming && input.isNotBlank()) { Text("Send") }
+        Row(Modifier.fillMaxWidth().background(p.card).navigationBarsPadding().padding(8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FinTextField(input, { input = it }, "Ask about your money", Modifier.weight(1f), singleLine = false)
+            IconButton(onClick = { vm.send(input); input = "" }, enabled = !streaming && input.isNotBlank()) {
+                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send", tint = if (!streaming && input.isNotBlank()) p.accent else p.tertiaryLabel)
+            }
         }
     }
 }

@@ -36,6 +36,8 @@ import ca.emarshall.finance.data.CategoryRepository
 import ca.emarshall.finance.data.TransactionRepository
 import ca.emarshall.finance.data.db.CategoryEntity
 import ca.emarshall.finance.ui.BackTopBar
+import ca.emarshall.finance.ui.design.Group
+import ca.emarshall.finance.ui.design.MenuRow
 import ca.emarshall.finance.ui.LabeledRow
 import ca.emarshall.finance.ui.MoneyText
 import ca.emarshall.finance.ui.Picker
@@ -115,29 +117,36 @@ fun TransactionDetailScreen(nav: NavController, vm: TransactionDetailViewModel =
                 ca.emarshall.finance.ui.design.GroupRow("Bank description", subtitle = tx.rawDescription)
                 ca.emarshall.finance.ui.design.GroupRow("Imported from", value = tx.source.lowercase().replaceFirstChar { it.uppercase() }, divider = false)
             }
-            Picker(
-                "Category", cats.firstOrNull { it.id == tx.categoryId }, cats,
-                { "${it.name}${if (it.kind == "TRANSFER") " (transfer)" else ""}" }, vm::setCategory, Modifier.fillMaxWidth(),
-            )
-            if (tx.categoryLocked) Text("You set this category, so rules won't change it.", style = MaterialTheme.typography.bodySmall)
+            Group {
+                MenuRow(
+                    "Category", cats.firstOrNull { it.id == tx.categoryId }, cats,
+                    { it?.let { c -> c.name + if (c.kind == "TRANSFER") " (transfer)" else "" } ?: "Uncategorised" },
+                    { c -> c?.let(vm::setCategory) }, divider = false,
+                )
+            }
+            if (tx.categoryLocked) ca.emarshall.finance.ui.design.Footnote("You set this category, so rules won't change it.")
 
             if (tx.transferLinkId != null) {
-                SectionCard("Transfer between my accounts") {
-                    Text("Paired with a matching amount in another of your accounts. Transfers don't count as income or spending.")
-                    if (tx.transferLocked) Text("Confirmed.", style = MaterialTheme.typography.bodySmall)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (!tx.transferLocked) Button(onClick = vm::confirmTransfer) { Text("Confirm") }
-                        OutlinedButton(onClick = vm::unlinkTransfer) { Text("Not a transfer") }
+                ca.emarshall.finance.ui.design.SectionHeader("Transfer")
+                ca.emarshall.finance.ui.design.FinCard {
+                    Text(
+                        "Paired with a matching amount in another of your accounts. Transfers don't count as income or spending." +
+                            if (tx.transferLocked) " You confirmed it." else "",
+                        style = MaterialTheme.typography.bodyMedium, color = p.secondaryLabel,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        if (!tx.transferLocked) ca.emarshall.finance.ui.design.PrimaryButton("Confirm", vm::confirmTransfer, Modifier.weight(1f))
+                        ca.emarshall.finance.ui.design.SecondaryButton("Not a transfer", vm::unlinkTransfer, Modifier.weight(1f))
                     }
                 }
             }
 
-            OutlinedTextField(
-                value = notes.orEmpty(), onValueChange = { notes = it }, modifier = Modifier.fillMaxWidth(),
-                label = { Text("Notes") }, minLines = 2,
-            )
-            Button(onClick = { vm.saveNotes(notes.orEmpty()) }, enabled = notes != tx.notes.orEmpty()) { Text("Save notes") }
-            message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+            ca.emarshall.finance.ui.design.SectionHeader("Notes")
+            ca.emarshall.finance.ui.design.FinCard {
+                ca.emarshall.finance.ui.design.FinTextField(notes.orEmpty(), { notes = it }, "Add a note", singleLine = false)
+                if (notes != tx.notes.orEmpty()) ca.emarshall.finance.ui.design.PrimaryButton("Save note", { vm.saveNotes(notes.orEmpty()) })
+            }
+            message?.let { ca.emarshall.finance.ui.design.Notice(it, ca.emarshall.finance.ui.design.NoticeTone.SUCCESS) }
         }
 
         learn?.let { c ->

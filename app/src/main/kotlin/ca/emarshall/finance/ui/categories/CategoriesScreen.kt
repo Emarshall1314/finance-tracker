@@ -34,10 +34,24 @@ import androidx.navigation.NavController
 import ca.emarshall.finance.core.model.CategoryKind
 import ca.emarshall.finance.data.CategoryRepository
 import ca.emarshall.finance.data.db.CategoryEntity
-import ca.emarshall.finance.ui.BackTopBar
-import ca.emarshall.finance.ui.ColorDot
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Rule
+import androidx.compose.material3.Switch
+import androidx.compose.ui.graphics.Color
 import ca.emarshall.finance.ui.Picker
-import ca.emarshall.finance.ui.SectionCard
+import ca.emarshall.finance.ui.categoryIcon
+import ca.emarshall.finance.ui.design.DetailScreen
+import ca.emarshall.finance.ui.design.FinCard
+import ca.emarshall.finance.ui.design.FinTextField
+import ca.emarshall.finance.ui.design.Group
+import ca.emarshall.finance.ui.design.GroupRow
+import ca.emarshall.finance.ui.design.Notice
+import ca.emarshall.finance.ui.design.NoticeTone
+import ca.emarshall.finance.ui.design.PrimaryButton
+import ca.emarshall.finance.ui.design.SectionHeader
+import ca.emarshall.finance.ui.design.Segmented
+import ca.emarshall.finance.ui.theme.Fin
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -73,53 +87,80 @@ fun CategoriesScreen(nav: NavController, vm: CategoriesViewModel = hiltViewModel
     var ruleCat by remember { mutableStateOf<CategoryEntity?>(null) }
     var showSeed by remember { mutableStateOf(false) }
     val byId = cats.associateBy { it.id }
+    val p = Fin.palette
 
-    Column(Modifier.fillMaxSize()) {
-        BackTopBar("Categories & rules", onBack = { nav.popBackStack() })
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            SectionCard("Categories") {
-                CategoryKind.entries.forEach { k ->
-                    Text(k.name.lowercase().replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.labelLarge)
-                    cats.filter { it.kind == k.name }.forEach { c ->
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            ColorDot(c.color)
-                            Text(c.name, Modifier.weight(1f))
-                            if (!c.builtIn) IconButton(onClick = { vm.deleteCategory(c) }) { Icon(Icons.Default.Delete, contentDescription = "Delete ${c.name}") }
-                        }
+    DetailScreen("Categories & rules", onBack = { nav.popBackStack() }) {
+        message?.let { m -> item { Notice(m, NoticeTone.SUCCESS) } }
+        CategoryKind.entries.forEach { k ->
+            val inKind = cats.filter { it.kind == k.name }
+            if (inKind.isEmpty()) return@forEach
+            item { SectionHeader(KIND_LABELS[k] ?: k.name) }
+            item {
+                Group {
+                    inKind.forEachIndexed { i, c ->
+                        GroupRow(
+                            c.name, icon = categoryIcon(c.icon), iconColor = Color(c.color.toInt()), divider = i < inKind.size - 1,
+                            trailing = if (c.builtIn) null else ({
+                                IconButton(onClick = { vm.deleteCategory(c) }) { Icon(Icons.Outlined.Delete, contentDescription = "Delete ${c.name}", tint = p.tertiaryLabel) }
+                            }),
+                        )
                     }
                 }
-                OutlinedTextField(newName, { newName = it }, Modifier.fillMaxWidth(), label = { Text("New category") }, singleLine = true)
-                Picker("Kind", newKind, CategoryKind.entries, { it.name.lowercase() }, { newKind = it }, Modifier.fillMaxWidth())
-                Button(onClick = { vm.addCategory(newName, newKind); newName = "" }, enabled = newName.isNotBlank()) { Text("Add category") }
             }
-            SectionCard("Add a rule") {
-                OutlinedTextField(rulePattern, { rulePattern = it }, Modifier.fillMaxWidth(), label = { Text("Text to match (e.g. NETFLIX)") }, singleLine = true)
-                Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(ruleRegex, { ruleRegex = it }); Text("Regular expression") }
+        }
+        item { SectionHeader("New category") }
+        item {
+            FinCard {
+                FinTextField(newName, { newName = it }, "Name")
+                Segmented(CategoryKind.entries, newKind, { KIND_LABELS[it] ?: it.name }, { newKind = it })
+                PrimaryButton("Add category", { vm.addCategory(newName.trim(), newKind); newName = "" }, enabled = newName.isNotBlank())
+            }
+        }
+        item { SectionHeader("Your rules") }
+        item {
+            val mine = rules.filter { it.learned || it.priority >= 500 }
+            if (mine.isEmpty()) {
+                FinCard { Text("None yet. Recategorise a transaction and choose \"Always do this\", or add one below.", style = MaterialTheme.typography.bodyMedium, color = p.secondaryLabel) }
+            } else {
+                Group {
+                    mine.forEachIndexed { i, r ->
+                        GroupRow(
+                            r.pattern, subtitle = "→ ${byId[r.categoryId]?.name ?: "?"}", divider = i < mine.size - 1,
+                            trailing = { IconButton(onClick = { vm.deleteRule(r.id) }) { Icon(Icons.Outlined.Delete, contentDescription = "Delete rule ${r.pattern}", tint = p.tertiaryLabel) } },
+                        )
+                    }
+                }
+            }
+        }
+        item { SectionHeader("Add a rule") }
+        item {
+            FinCard {
+                FinTextField(rulePattern, { rulePattern = it }, "Text to match", placeholder = "e.g. NETFLIX")
                 Picker("Category", ruleCat, cats, { it.name }, { ruleCat = it }, Modifier.fillMaxWidth())
-                Button(onClick = { ruleCat?.let { vm.addRule(rulePattern, ruleRegex, it) }; rulePattern = "" }, enabled = rulePattern.isNotBlank() && ruleCat != null) {
-                    Text("Add rule and apply")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Regular expression", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    Switch(ruleRegex, { ruleRegex = it })
                 }
-                message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+                PrimaryButton("Add rule and apply", { ruleCat?.let { vm.addRule(rulePattern.trim(), ruleRegex, it) }; rulePattern = "" }, enabled = rulePattern.isNotBlank() && ruleCat != null)
             }
-            SectionCard("Your rules") {
-                val mine = rules.filter { it.learned || it.priority >= 500 }
-                if (mine.isEmpty()) Text("None yet. Recategorise a transaction and choose \"Always do this\".")
-                mine.forEach { r ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("“${r.pattern}” → ${byId[r.categoryId]?.name ?: "?"}", Modifier.weight(1f))
-                        IconButton(onClick = { vm.deleteRule(r.id) }) { Icon(Icons.Default.Delete, contentDescription = "Delete rule ${r.pattern}") }
-                    }
-                }
+        }
+        item {
+            Group {
+                GroupRow("Re-apply rules to all transactions", icon = Icons.Outlined.Refresh, onClick = vm::reapply)
+                GroupRow(if (showSeed) "Hide built-in rules" else "Show built-in rules", icon = Icons.Outlined.Rule, iconColor = p.chart[2], divider = false, onClick = { showSeed = !showSeed })
             }
-            OutlinedButton(onClick = { showSeed = !showSeed }) { Text(if (showSeed) "Hide built-in rules" else "Show built-in rules") }
-            if (showSeed) {
-                SectionCard("Built-in rules") {
-                    rules.filter { !it.learned && it.priority < 500 }.forEach { r ->
-                        Text("“${r.pattern}” → ${byId[r.categoryId]?.name ?: "?"}", style = MaterialTheme.typography.bodySmall)
-                    }
+        }
+        if (showSeed) {
+            item {
+                val seed = rules.filter { !it.learned && it.priority < 500 }
+                Group {
+                    seed.forEachIndexed { i, r -> GroupRow(r.pattern, subtitle = "→ ${byId[r.categoryId]?.name ?: "?"}", divider = i < seed.size - 1) }
                 }
             }
-            OutlinedButton(onClick = vm::reapply) { Text("Re-apply rules to all transactions") }
         }
     }
 }
+
+private val KIND_LABELS = mapOf(
+    CategoryKind.EXPENSE to "Spending", CategoryKind.INCOME to "Income", CategoryKind.TRANSFER to "Transfers",
+)

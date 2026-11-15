@@ -24,6 +24,28 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBackIos
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.Inbox
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.WarningAmber
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Switch
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material.icons.filled.UnfoldMore
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -230,5 +252,135 @@ fun LegendDot(color: Color, label: String) {
         Box(Modifier.size(8.dp).clip(CircleShape).background(color))
         Spacer(Modifier.width(6.dp))
         Text(label, style = MaterialTheme.typography.bodySmall, color = Fin.palette.secondaryLabel)
+    }
+}
+
+/** Grey footnote under a group or card, aligned with its content. */
+@Composable
+fun Footnote(text: String, modifier: Modifier = Modifier) {
+    Text(text, modifier.fillMaxWidth().padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall, color = Fin.palette.secondaryLabel)
+}
+
+enum class NoticeTone { INFO, WARNING, ERROR, SUCCESS }
+
+/** A tinted strip for messages, warnings and errors, instead of bare coloured text. */
+@Composable
+fun Notice(text: String, tone: NoticeTone = NoticeTone.INFO, modifier: Modifier = Modifier, action: String? = null, onAction: (() -> Unit)? = null) {
+    val p = Fin.palette
+    val (color, icon) = when (tone) {
+        NoticeTone.INFO -> p.accent to Icons.Outlined.Info
+        NoticeTone.WARNING -> p.warning to Icons.Outlined.WarningAmber
+        NoticeTone.ERROR -> p.negative to Icons.Outlined.ErrorOutline
+        NoticeTone.SUCCESS -> p.positive to Icons.Outlined.CheckCircle
+    }
+    Row(
+        modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(color.copy(alpha = 0.10f)).padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(20.dp))
+        Text(text, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = p.label)
+        if (action != null && onAction != null) {
+            Text(action, Modifier.clickable(onClick = onAction).padding(4.dp), color = color, style = MaterialTheme.typography.labelLarge)
+        }
+    }
+}
+
+/** The one main action on a screen: full width, tall, rounded. */
+@Composable
+fun PrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, loading: Boolean = false) {
+    Button(
+        onClick = onClick, enabled = enabled && !loading, modifier = modifier.fillMaxWidth().height(50.dp),
+        shape = RoundedCornerShape(14.dp),
+    ) {
+        if (loading) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Color.White) else Text(text, style = MaterialTheme.typography.labelLarge)
+    }
+}
+
+/** A secondary action: tinted, same shape as [PrimaryButton]. */
+@Composable
+fun SecondaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, destructive: Boolean = false) {
+    val color = if (destructive) Fin.palette.negative else Fin.palette.accent
+    FilledTonalButton(
+        onClick = onClick, enabled = enabled, modifier = modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(14.dp),
+        colors = ButtonDefaults.filledTonalButtonColors(containerColor = color.copy(alpha = 0.12f), contentColor = color),
+    ) { Text(text, style = MaterialTheme.typography.labelLarge) }
+}
+
+/** Borderless text field on a grey fill, for forms inside cards. */
+@Composable
+fun FinTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier,
+    singleLine: Boolean = true,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    placeholder: String? = null,
+    visualTransformation: androidx.compose.ui.text.input.VisualTransformation = androidx.compose.ui.text.input.VisualTransformation.None,
+    trailingIcon: (@Composable () -> Unit)? = null,
+) {
+    val p = Fin.palette
+    TextField(
+        value, onValueChange, modifier.fillMaxWidth(),
+        label = { Text(label) }, placeholder = placeholder?.let { { Text(it) } }, singleLine = singleLine,
+        keyboardOptions = keyboardOptions, visualTransformation = visualTransformation, trailingIcon = trailingIcon,
+        shape = RoundedCornerShape(12.dp),
+        colors = TextFieldDefaults.colors(
+            focusedContainerColor = p.cardSecondary, unfocusedContainerColor = p.cardSecondary, disabledContainerColor = p.cardSecondary,
+            focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent, disabledIndicatorColor = Color.Transparent,
+            focusedLabelColor = p.accent, unfocusedLabelColor = p.secondaryLabel,
+        ),
+    )
+}
+
+/** Centred icon and message for a screen or section with nothing in it yet. */
+@Composable
+fun EmptyMessage(text: String, icon: ImageVector = Icons.Outlined.Inbox, modifier: Modifier = Modifier, action: String? = null, onAction: (() -> Unit)? = null) {
+    Column(modifier.fillMaxWidth().padding(vertical = 40.dp, horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Box(Modifier.size(56.dp).clip(CircleShape).background(Fin.palette.accent.copy(alpha = 0.10f)), contentAlignment = Alignment.Center) {
+            Icon(icon, contentDescription = null, tint = Fin.palette.accent, modifier = Modifier.size(28.dp))
+        }
+        Text(text, style = MaterialTheme.typography.bodyMedium, color = Fin.palette.secondaryLabel, textAlign = TextAlign.Center)
+        if (action != null && onAction != null) TextButton(onClick = onAction) { Text(action) }
+    }
+}
+
+/** A row with a switch on the right, for settings. */
+@Composable
+fun SwitchRow(title: String, checked: Boolean, onChange: (Boolean) -> Unit, subtitle: String? = null, icon: ImageVector? = null, iconColor: Color = Color.Unspecified, divider: Boolean = true) {
+    GroupRow(title, subtitle = subtitle, icon = icon, iconColor = iconColor, divider = divider, onClick = { onChange(!checked) }) {
+        Switch(checked, onChange)
+    }
+}
+
+/** Label on the left, value on the right, inside a [Group]. */
+@Composable
+fun ValueRow(title: String, value: String, valueColor: Color = Color.Unspecified, divider: Boolean = true) =
+    GroupRow(title, value = value, valueColor = valueColor, divider = divider)
+
+/** A [Group] row that shows the current choice on the right and opens a menu of options. */
+@Composable
+fun <T> MenuRow(
+    title: String,
+    selected: T,
+    options: List<T>,
+    display: (T) -> String,
+    onSelect: (T) -> Unit,
+    subtitle: String? = null,
+    icon: ImageVector? = null,
+    iconColor: Color = Color.Unspecified,
+    divider: Boolean = true,
+    enabled: Boolean = true,
+) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        GroupRow(
+            title, subtitle = subtitle, icon = icon, iconColor = iconColor, value = display(selected), divider = divider,
+            onClick = if (enabled) ({ open = true }) else null,
+            trailing = { Icon(Icons.Default.UnfoldMore, contentDescription = null, tint = Fin.palette.tertiaryLabel, modifier = Modifier.size(18.dp)) },
+        )
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }, modifier = Modifier.heightIn(max = 360.dp)) {
+            options.forEach { o -> DropdownMenuItem(text = { Text(display(o)) }, onClick = { onSelect(o); open = false }) }
+        }
     }
 }

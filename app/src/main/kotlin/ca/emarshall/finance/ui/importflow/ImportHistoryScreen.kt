@@ -26,7 +26,17 @@ import ca.emarshall.finance.data.AccountRepository
 import ca.emarshall.finance.data.ImportRepository
 import ca.emarshall.finance.data.db.ImportBatchEntity
 import ca.emarshall.finance.ui.ImportRoute
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.FileUpload
 import ca.emarshall.finance.ui.design.DetailScreen
+import ca.emarshall.finance.ui.design.EmptyMessage
+import ca.emarshall.finance.ui.design.Group
+import ca.emarshall.finance.ui.design.GroupRow
+import ca.emarshall.finance.ui.design.Notice
+import ca.emarshall.finance.ui.design.NoticeTone
+import ca.emarshall.finance.ui.design.PrimaryButton
+import ca.emarshall.finance.ui.design.SecondaryButton
 import ca.emarshall.finance.ui.design.FinCard
 import ca.emarshall.finance.ui.design.SectionHeader
 import ca.emarshall.finance.ui.pretty
@@ -40,6 +50,8 @@ import java.time.Instant
 import java.time.ZoneId
 import javax.inject.Inject
 
+private const val CHECKING = "Checking every statement…"
+
 @HiltViewModel
 class ImportHistoryViewModel @Inject constructor(private val imports: ImportRepository, accounts: AccountRepository) : ViewModel() {
     val batches = imports.batches.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -49,7 +61,7 @@ class ImportHistoryViewModel @Inject constructor(private val imports: ImportRepo
     fun undo(id: Long) = viewModelScope.launch { imports.undo(id) }
 
     fun repair() = viewModelScope.launch {
-        repairStatus.value = "Checking every statement…"
+        repairStatus.value = CHECKING
         repairStatus.value = runCatching { imports.repairMisfiledImports() }.fold(
             onSuccess = { r ->
                 buildString {
@@ -70,31 +82,26 @@ fun ImportHistoryScreen(nav: NavController, vm: ImportHistoryViewModel = hiltVie
     var confirm by remember { mutableStateOf<ImportBatchEntity?>(null) }
     val p = Fin.palette
     DetailScreen("Imports", onBack = { nav.popBackStack() }) {
-        item {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { nav.navigate(ImportRoute()) }) { Text("Import files") }
-                OutlinedButton(onClick = { vm.repair() }, enabled = status != "Checking every statement…") { Text("Check accounts") }
-            }
-        }
-        status?.let { s -> item { Text(s, style = MaterialTheme.typography.bodyMedium, color = p.secondaryLabel) } }
+        item { PrimaryButton("Import files", { nav.navigate(ImportRoute()) }) }
+        item { SecondaryButton("Check every statement is in the right account", { vm.repair() }, enabled = status != CHECKING) }
+        status?.let { s -> item { Notice(s, if (s == CHECKING) NoticeTone.INFO else NoticeTone.SUCCESS) } }
         if (batches.isEmpty()) {
-            item { Text("Nothing imported yet.", color = p.secondaryLabel) }
+            item { EmptyMessage("Nothing imported yet.", Icons.Outlined.FileUpload) }
         } else {
             item { SectionHeader("${batches.size} imports") }
-        }
-        items(batches, key = { it.id }) { b ->
-            FinCard {
-                val acct = accounts.firstOrNull { it.id == b.accountId }?.nickname ?: "?"
-                Text(b.fileName, style = MaterialTheme.typography.titleMedium)
-                Text(
-                    "$acct · ${b.format} · imported ${Instant.ofEpochMilli(b.importedAtMillis).atZone(ZoneId.systemDefault()).toLocalDate().pretty()}",
-                    style = MaterialTheme.typography.bodySmall, color = p.secondaryLabel,
-                )
-                if (b.dateFrom != null && b.dateTo != null) {
-                    Text("${b.dateFrom.pretty()} – ${b.dateTo.pretty()}", style = MaterialTheme.typography.bodySmall, color = p.secondaryLabel)
+            item {
+                Group {
+                    batches.forEachIndexed { i, b ->
+                        val acct = accounts.firstOrNull { it.id == b.accountId }?.nickname ?: "?"
+                        val period = if (b.dateFrom != null && b.dateTo != null) "${b.dateFrom.pretty()} – ${b.dateTo.pretty()}" else
+                            "imported ${Instant.ofEpochMilli(b.importedAtMillis).atZone(ZoneId.systemDefault()).toLocalDate().pretty()}"
+                        GroupRow(
+                            b.fileName, subtitle = "$acct · $period · ${b.newCount} new", icon = Icons.Outlined.Description, iconColor = p.accent,
+                            divider = i < batches.size - 1,
+                            trailing = { TextButton(onClick = { confirm = b }) { Text("Undo", color = p.negative) } },
+                        )
+                    }
                 }
-                Text("${b.newCount} new, ${b.duplicateCount} duplicates skipped", style = MaterialTheme.typography.bodySmall, color = p.secondaryLabel)
-                TextButton(onClick = { confirm = b }) { Text("Undo import", color = p.negative) }
             }
         }
     }

@@ -48,11 +48,25 @@ import ca.emarshall.finance.data.StatementsRepository
 import ca.emarshall.finance.data.institutionEnum
 import ca.emarshall.finance.data.typeEnum
 import ca.emarshall.finance.statements.StatementFileStore
-import ca.emarshall.finance.ui.BackTopBar
-import ca.emarshall.finance.ui.EmptyState
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.WarningAmber
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import ca.emarshall.finance.ui.design.DetailScreen
+import ca.emarshall.finance.ui.design.EmptyMessage
+import ca.emarshall.finance.ui.design.Footnote
+import ca.emarshall.finance.ui.design.Group
+import ca.emarshall.finance.ui.design.GroupRow
+import ca.emarshall.finance.ui.design.HeroCard
+import ca.emarshall.finance.ui.design.Notice
+import ca.emarshall.finance.ui.design.NoticeTone
+import ca.emarshall.finance.ui.design.SectionHeader
+import ca.emarshall.finance.ui.theme.Fin
 import ca.emarshall.finance.ui.ImportRoute
 import ca.emarshall.finance.ui.SHORT_DAY
-import ca.emarshall.finance.ui.SectionCard
 import ca.emarshall.finance.ui.StatementViewerRoute
 import ca.emarshall.finance.ui.pretty
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -79,56 +93,51 @@ private fun whereToGet(a: AccountStatements): String = when {
 @Composable
 fun StatementsScreen(nav: NavController, vm: StatementsViewModel = hiltViewModel()) {
     val accounts by vm.accounts.collectAsStateWithLifecycle()
-    Column(Modifier.fillMaxSize()) {
-        BackTopBar("Statements", onBack = { nav.popBackStack() })
-        val list = accounts ?: return@Column
+    val p = Fin.palette
+    DetailScreen("Statements", onBack = { nav.popBackStack() }) {
+        val list = accounts ?: return@DetailScreen
         if (list.isEmpty()) {
-            EmptyState("No accounts yet.")
-            return@Column
+            item { EmptyMessage("Import a statement and it's kept here, encrypted on this phone.", Icons.Outlined.Description, action = "Import statements", onAction = { nav.navigate(ImportRoute()) }) }
+            return@DetailScreen
         }
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(
-                "Every file you import is kept here, encrypted on this phone. Missing statements are worked out from " +
-                    "each account's statement cycle.",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            list.forEach { a ->
-                SectionCard(a.account.nickname) {
-                    a.closingDay?.let { Text("Statements close on ${if (it >= 28) "the last day of the month" else "day $it"}", style = MaterialTheme.typography.bodySmall) }
-                    if (a.imported.isEmpty()) Text("Nothing imported yet.")
-                    if (a.missing.isNotEmpty()) {
-                        a.missing.forEach { m ->
-                            Row(
-                                Modifier.fillMaxWidth().clickable { nav.navigate(ImportRoute(accountId = a.account.id)) }.padding(vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                Icon(Icons.Default.ErrorOutline, contentDescription = "Missing", tint = MaterialTheme.colorScheme.error)
-                                Text("Missing: ${m.periodStart.format(SHORT_DAY)} – ${m.periodEnd.pretty()}", color = MaterialTheme.colorScheme.error)
-                            }
-                        }
-                        Text("Download from ${whereToGet(a)}, then open it with Finance Tracker.", style = MaterialTheme.typography.bodySmall)
+        val missing = list.sumOf { it.missing.size }
+        item {
+            HeroCard(if (missing == 0) p.investGradient else p.heroGradient) {
+                val white = Color.White
+                Text(if (missing == 0) "All caught up" else "$missing missing", color = white, style = MaterialTheme.typography.headlineMedium)
+                Text(
+                    if (missing == 0) "Every statement that's out has been imported." else "Download ${if (missing == 1) "it" else "them"} from your bank, then open with Finance Tracker.",
+                    color = white.copy(alpha = 0.85f), style = MaterialTheme.typography.bodyMedium,
+                )
+                Text("${list.sumOf { it.imported.size }} statements kept, encrypted on this phone", color = white.copy(alpha = 0.7f), style = MaterialTheme.typography.bodySmall)
+            }
+        }
+        list.forEach { a ->
+            item(key = "h${a.account.id}") { SectionHeader(a.account.nickname, "Import") { nav.navigate(ImportRoute(accountId = a.account.id)) } }
+            item(key = "g${a.account.id}") {
+                val imported = a.imported.sortedByDescending { it.end ?: it.start }
+                Group {
+                    a.missing.forEachIndexed { i, m ->
+                        GroupRow(
+                            "${m.periodStart.format(SHORT_DAY)} – ${m.periodEnd.pretty()}", subtitle = "Missing · get it from ${whereToGet(a)}",
+                            icon = Icons.Outlined.WarningAmber, iconColor = p.warning, showChevron = true,
+                            divider = i < a.missing.size - 1 || imported.isNotEmpty(),
+                            onClick = { nav.navigate(ImportRoute(accountId = a.account.id)) },
+                        )
                     }
-                    a.imported.forEach { r ->
-                        Row(
-                            Modifier.fillMaxWidth()
-                                .clickable(enabled = r.batch.hasFile && r.batch.format == "PDF") {
-                                    nav.navigate(StatementViewerRoute(r.batch.id, "${a.account.nickname} · ${r.end?.format(SHORT_DAY) ?: ""}"))
-                                }
-                                .padding(vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Icon(
-                                if (r.batch.hasFile && r.batch.format == "PDF") Icons.Default.Description else Icons.Default.CheckCircle,
-                                contentDescription = null, tint = MaterialTheme.colorScheme.primary,
-                            )
-                            Column(Modifier.weight(1f)) {
-                                Text(if (r.start != null && r.end != null) "${r.start.format(SHORT_DAY)} – ${r.end.pretty()}" else r.batch.fileName)
-                                Text("${r.batch.format} · ${r.batch.newCount} transactions", style = MaterialTheme.typography.bodySmall)
-                            }
-                        }
+                    imported.forEachIndexed { i, r ->
+                        val viewable = r.batch.hasFile && r.batch.format == "PDF"
+                        GroupRow(
+                            if (r.start != null && r.end != null) "${r.start.format(SHORT_DAY)} – ${r.end.pretty()}" else r.batch.fileName,
+                            subtitle = "${r.batch.format} · ${r.batch.newCount} transactions",
+                            icon = Icons.Outlined.Description, iconColor = p.accent, showChevron = viewable, divider = i < imported.size - 1,
+                            onClick = if (viewable) ({ nav.navigate(StatementViewerRoute(r.batch.id, "${a.account.nickname} · ${r.end?.format(SHORT_DAY) ?: ""}")) }) else null,
+                        )
                     }
+                    if (a.missing.isEmpty() && imported.isEmpty()) GroupRow("Nothing imported yet", divider = false)
                 }
             }
+            a.closingDay?.let { d -> item(key = "f${a.account.id}") { Footnote("Statements close on ${if (d >= 28) "the last day of the month" else "day $d"}.") } }
         }
     }
 }
@@ -150,21 +159,15 @@ fun StatementViewerScreen(nav: NavController, route: StatementViewerRoute, vm: S
             error = "Couldn't open this statement."
         }
     }
-    Column(Modifier.fillMaxSize()) {
-        BackTopBar(route.title, onBack = { nav.popBackStack() })
+    DetailScreen(route.title, onBack = { nav.popBackStack() }) {
         when {
-            error != null -> Column(Modifier.padding(16.dp)) {
-                Text(error!!, color = MaterialTheme.colorScheme.error)
-                Button(onClick = { nav.popBackStack() }) { Text("Back") }
-            }
-            pages == null -> CircularProgressIndicator(Modifier.padding(32.dp))
-            else -> LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(pages!!) { bmp ->
-                    Image(
-                        bmp.asImageBitmap(), contentDescription = "Statement page",
-                        modifier = Modifier.fillMaxWidth(), contentScale = ContentScale.FillWidth,
-                    )
-                }
+            error != null -> item { Notice(error!!, NoticeTone.ERROR) }
+            pages == null -> item { Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
+            else -> items(pages!!) { bmp ->
+                Image(
+                    bmp.asImageBitmap(), contentDescription = "Statement page",
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.FillWidth,
+                )
             }
         }
     }

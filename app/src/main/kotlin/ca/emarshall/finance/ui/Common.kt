@@ -137,11 +137,7 @@ fun StatTile(label: String, value: String, modifier: Modifier = Modifier, valueC
 }
 
 @Composable
-fun EmptyState(text: String, modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-        Text(text, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
+fun EmptyState(text: String, modifier: Modifier = Modifier) = ca.emarshall.finance.ui.design.EmptyMessage(text, modifier = modifier)
 
 @Composable
 fun ColorDot(color: Long, modifier: Modifier = Modifier) {
@@ -194,7 +190,7 @@ fun ShareBar(fraction: Float, color: Color, modifier: Modifier = Modifier) {
 @Composable
 fun LabeledRow(label: String, modifier: Modifier = Modifier, trailing: @Composable () -> Unit) {
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = ca.emarshall.finance.ui.theme.Fin.palette.secondaryLabel)
         Spacer(Modifier.width(8.dp))
         trailing()
     }

@@ -20,11 +20,17 @@ import androidx.navigation.NavController
 import ca.emarshall.finance.core.money.Money
 import ca.emarshall.finance.core.recurring.RecurringSeries
 import ca.emarshall.finance.data.TransactionRepository
-import ca.emarshall.finance.ui.BackTopBar
-import ca.emarshall.finance.ui.EmptyState
-import ca.emarshall.finance.ui.LabeledRow
-import ca.emarshall.finance.ui.MoneyText
-import ca.emarshall.finance.ui.SectionCard
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Autorenew
+import androidx.compose.ui.graphics.Color
+import ca.emarshall.finance.ui.design.DetailScreen
+import ca.emarshall.finance.ui.design.EmptyMessage
+import ca.emarshall.finance.ui.design.Footnote
+import ca.emarshall.finance.ui.design.Group
+import ca.emarshall.finance.ui.design.GroupRow
+import ca.emarshall.finance.ui.design.HeroCard
+import ca.emarshall.finance.ui.design.SectionHeader
+import ca.emarshall.finance.ui.theme.Fin
 import ca.emarshall.finance.ui.pretty
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
@@ -41,31 +47,41 @@ class BillsViewModel @Inject constructor(tx: TransactionRepository) : ViewModel(
 @Composable
 fun BillsScreen(nav: NavController, vm: BillsViewModel = hiltViewModel()) {
     val bills by vm.bills.collectAsStateWithLifecycle()
-    Column(Modifier.fillMaxSize()) {
-        BackTopBar("Bills & subscriptions", onBack = { nav.popBackStack() })
-        val list: List<RecurringSeries> = bills ?: return@Column
+    val list: List<RecurringSeries>? = bills
+    DetailScreen("Bills & subscriptions", onBack = { nav.popBackStack() }) {
+        if (list == null) return@DetailScreen
         if (list.isEmpty()) {
-            EmptyState("Nothing recurring yet. A charge shows up here after the same merchant charges a similar amount about monthly, 3 times.")
-            return@Column
+            item {
+                EmptyMessage(
+                    "Nothing recurring yet. A charge shows up here once the same merchant has charged a similar amount about monthly three times.",
+                    Icons.Outlined.Autorenew,
+                )
+            }
+            return@DetailScreen
         }
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            val total = list.filter { it.currency == "CAD" }.sumOf { it.monthlyCostCents }
-            ca.emarshall.finance.ui.design.HeroCard(ca.emarshall.finance.ui.theme.Fin.palette.heroGradient) {
-                val white = androidx.compose.ui.graphics.Color.White
+        val total = list.filter { it.currency == "CAD" }.sumOf { it.monthlyCostCents }
+        item {
+            HeroCard(Fin.palette.heroGradient) {
+                val white = Color.White
                 Text("Every month", color = white.copy(alpha = 0.8f), style = MaterialTheme.typography.bodyMedium)
                 Text(Money.formatWhole(total), color = white, style = MaterialTheme.typography.headlineLarge)
                 Text("${Money.formatWhole(total * 12)} a year across ${list.size} bills and subscriptions", color = white.copy(alpha = 0.85f), style = MaterialTheme.typography.bodyMedium)
             }
-            ca.emarshall.finance.ui.design.Group {
-                list.forEachIndexed { i, b ->
-                    ca.emarshall.finance.ui.design.GroupRow(
+        }
+        item { SectionHeader("Coming up") }
+        item {
+            Group {
+                list.sortedBy { it.nextExpected }.forEachIndexed { i, b ->
+                    GroupRow(
                         b.merchant,
                         subtitle = "Next ${b.nextExpected.pretty()} · seen ${b.occurrences}×",
+                        icon = Icons.Outlined.Autorenew, iconColor = Fin.palette.chart[i % Fin.palette.chart.size],
                         value = Money.format(b.monthlyCostCents, b.currency, true),
                         divider = i < list.size - 1,
                     )
                 }
             }
         }
+        item { Footnote("Found from charges that repeat about every month at a similar amount.") }
     }
 }

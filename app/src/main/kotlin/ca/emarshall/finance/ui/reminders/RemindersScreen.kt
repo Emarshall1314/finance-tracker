@@ -43,7 +43,22 @@ import ca.emarshall.finance.data.db.AccountEntity
 import ca.emarshall.finance.data.db.ReminderEntity
 import ca.emarshall.finance.data.typeEnum
 import ca.emarshall.finance.notify.Notifier
-import ca.emarshall.finance.ui.BackTopBar
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AccountBalance
+import androidx.compose.material.icons.outlined.CreditCard
+import androidx.compose.material.icons.outlined.Event
+import androidx.compose.material.icons.outlined.NotificationsNone
+import ca.emarshall.finance.ui.design.DetailScreen
+import ca.emarshall.finance.ui.design.EmptyMessage
+import ca.emarshall.finance.ui.design.Footnote
+import ca.emarshall.finance.ui.design.Group
+import ca.emarshall.finance.ui.design.MenuRow
+import ca.emarshall.finance.ui.design.Notice
+import ca.emarshall.finance.ui.design.NoticeTone
+import ca.emarshall.finance.ui.design.SecondaryButton
+import ca.emarshall.finance.ui.design.SectionHeader
+import ca.emarshall.finance.ui.design.SwitchRow
+import ca.emarshall.finance.ui.theme.Fin
 import ca.emarshall.finance.ui.EmptyState
 import ca.emarshall.finance.ui.LabeledRow
 import ca.emarshall.finance.ui.Picker
@@ -103,41 +118,44 @@ fun RemindersScreen(nav: NavController, vm: RemindersViewModel = hiltViewModel()
         if (Build.VERSION.SDK_INT >= 33 && !vm.canNotify.value) explain = action else action()
     }
 
-    Column(Modifier.fillMaxSize()) {
-        BackTopBar("Statement reminders", onBack = { nav.popBackStack() })
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (!canNotify && reminders.any { it.enabled }) {
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Notifications are off, so reminders can't appear.")
-                        OutlinedButton(onClick = {
-                            context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))
-                        }) { Text("Open notification settings") }
-                    }
-                }
+    val p = Fin.palette
+    DetailScreen("Statement reminders", onBack = { nav.popBackStack() }) {
+        if (!canNotify && (reminders.any { it.enabled } || settings?.generalReminderEnabled == true)) {
+            item {
+                Notice("Notifications are off, so reminders can't appear.", NoticeTone.WARNING, action = "Settings", onAction = {
+                    context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))
+                })
             }
-            Text("Get a nudge a few days after each statement closes, so you remember to download it on your computer and import it.")
-            val statementAccounts = accounts.filter { it.questradeNumber == null && !it.typeEnum.isInvestment }
-            if (statementAccounts.isEmpty()) EmptyState("Add a bank or card account first.")
-            statementAccounts.forEach { a ->
-                ReminderCard(a, reminders.firstOrNull { it.accountId == a.id }) { day, offset, minutes, enabled ->
+        }
+        item { Footnote("A nudge a few days after each statement closes, so you remember to download it and import it.") }
+        val statementAccounts = accounts.filter { it.questradeNumber == null && !it.typeEnum.isInvestment }
+        if (statementAccounts.isEmpty()) item { EmptyMessage("Import a statement first; reminders follow each account's statement cycle.", Icons.Outlined.NotificationsNone) }
+        statementAccounts.forEach { a ->
+            item(key = a.id) {
+                ReminderGroup(a, reminders.firstOrNull { it.accountId == a.id }) { day, offset, minutes, enabled ->
                     val doSave = { vm.save(a.id, day, offset, minutes, enabled) }
                     if (enabled) withPermission { doSave() } else doSave()
                 }
             }
-            settings?.let { s ->
-                SectionCard("Monthly \"import your statements\" reminder") {
-                    LabeledRow("On") {
-                        Switch(s.generalReminderEnabled, { on ->
+        }
+        settings?.let { s ->
+            item { SectionHeader("Monthly check") }
+            item {
+                Group {
+                    SwitchRow(
+                        "Remind me to import", s.generalReminderEnabled, { on ->
                             val doSave = { vm.saveGeneral(on, s.generalReminderDay, s.generalReminderMinutes) }
                             if (on) withPermission { doSave() } else doSave()
-                        })
+                        },
+                        subtitle = "One reminder a month for all accounts", icon = Icons.Outlined.Event, iconColor = p.chart[1], divider = s.generalReminderEnabled,
+                    )
+                    if (s.generalReminderEnabled) {
+                        MenuRow("Day of month", s.generalReminderDay, DAYS, { it.toString() }, { vm.saveGeneral(true, it, s.generalReminderMinutes) }, divider = false)
                     }
-                    Picker("Day of month", s.generalReminderDay, DAYS, { it.toString() }, { vm.saveGeneral(s.generalReminderEnabled, it, s.generalReminderMinutes) }, Modifier.fillMaxWidth())
                 }
             }
-            Button(onClick = { withPermission { vm.test() } }, modifier = Modifier.fillMaxWidth()) { Text("Send test notification") }
         }
+        item { SecondaryButton("Send a test notification", { withPermission { vm.test() } }) }
     }
 
     explain?.let { action ->
@@ -158,20 +176,24 @@ fun RemindersScreen(nav: NavController, vm: RemindersViewModel = hiltViewModel()
 }
 
 @Composable
-private fun ReminderCard(a: AccountEntity, r: ReminderEntity?, onSave: (Int, Int, Int, Boolean) -> Unit) {
+private fun ReminderGroup(a: AccountEntity, r: ReminderEntity?, onSave: (Int, Int, Int, Boolean) -> Unit) {
     val day = r?.closingDay ?: a.closingDay ?: 1
     val offset = r?.offsetDays ?: 2
     val minutes = r?.timeOfDayMinutes ?: 9 * 60
     val enabled = r?.enabled ?: false
-    SectionCard(a.nickname) {
-        LabeledRow("Remind me") { Switch(enabled, { onSave(day, offset, minutes, it) }) }
-        Picker("Statement closing day", day, DAYS, { if (it >= 29) "$it (or the month's last day)" else it.toString() }, { onSave(it, offset, minutes, enabled) }, Modifier.fillMaxWidth())
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Picker("Days after", offset, OFFSETS, { it.toString() }, { onSave(day, it, minutes, enabled) }, Modifier.weight(1f))
-            Picker("Time", minutes, (6..21).map { it * 60 }, ::timeLabel, { onSave(day, offset, it, enabled) }, Modifier.weight(1f))
-        }
-        r?.nextFireAtMillis?.takeIf { enabled }?.let {
-            Text("Next: ${DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it))}", style = MaterialTheme.typography.bodySmall)
+    val next = r?.nextFireAtMillis?.takeIf { enabled }?.let { "Next: ${DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it))}" }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        SectionHeader(a.nickname)
+        Group {
+            SwitchRow(
+                "Remind me", enabled, { onSave(day, offset, minutes, it) }, subtitle = next ?: "Off",
+                icon = if (a.typeEnum.isLiability) Icons.Outlined.CreditCard else Icons.Outlined.AccountBalance, divider = enabled,
+            )
+            if (enabled) {
+                MenuRow("Statement closes on", day, DAYS, { if (it >= 29) "Day $it or month end" else "Day $it" }, { onSave(it, offset, minutes, enabled) })
+                MenuRow("Remind me", offset, OFFSETS, { if (it == 0) "Same day" else "$it day${if (it == 1) "" else "s"} after" }, { onSave(day, it, minutes, enabled) })
+                MenuRow("At", minutes, (6..21).map { it * 60 }, ::timeLabel, { onSave(day, offset, it, enabled) }, divider = false)
+            }
         }
     }
 }

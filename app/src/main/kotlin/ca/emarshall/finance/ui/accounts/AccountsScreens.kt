@@ -49,7 +49,21 @@ import ca.emarshall.finance.data.db.AccountEntity
 import ca.emarshall.finance.data.institutionEnum
 import ca.emarshall.finance.data.typeEnum
 import ca.emarshall.finance.ui.AccountEditRoute
-import ca.emarshall.finance.ui.BackTopBar
+import androidx.compose.material.icons.outlined.AccountBalance
+import androidx.compose.material3.IconButton
+import androidx.compose.ui.graphics.Color
+import ca.emarshall.finance.ui.design.DetailScreen
+import ca.emarshall.finance.ui.design.EmptyMessage
+import ca.emarshall.finance.ui.design.FinCard
+import ca.emarshall.finance.ui.design.FinTextField
+import ca.emarshall.finance.ui.design.Footnote
+import ca.emarshall.finance.ui.design.Group
+import ca.emarshall.finance.ui.design.GroupRow
+import ca.emarshall.finance.ui.design.PrimaryButton
+import ca.emarshall.finance.ui.design.SecondaryButton
+import ca.emarshall.finance.ui.design.SectionHeader
+import ca.emarshall.finance.ui.design.Segmented
+import ca.emarshall.finance.ui.theme.Fin
 import ca.emarshall.finance.ui.EmptyState
 import ca.emarshall.finance.ui.Picker
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -67,33 +81,34 @@ class AccountsViewModel @Inject constructor(repo: AccountRepository) : ViewModel
 @Composable
 fun AccountsScreen(nav: NavController, vm: AccountsViewModel = hiltViewModel()) {
     val accounts by vm.accounts.collectAsStateWithLifecycle()
-    Scaffold(
-        topBar = { BackTopBar("Accounts", onBack = { nav.popBackStack() }) },
-        floatingActionButton = {
-            ExtendedFloatingActionButton(onClick = { nav.navigate(AccountEditRoute()) }, icon = { Icon(Icons.Default.Add, null) }, text = { Text("Add manually") })
-        },
-    ) { pad ->
-        Column(Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            val list = accounts ?: return@Column
-            if (list.isEmpty()) EmptyState("Import your statements and the app sets up each account from them. Questrade accounts appear when you connect.")
-            list.groupBy { it.institutionEnum }.forEach { (inst, accs) ->
-                ca.emarshall.finance.ui.design.SectionHeader(inst.displayName)
-                ca.emarshall.finance.ui.design.Group {
+    DetailScreen("Accounts", onBack = { nav.popBackStack() }, trailing = {
+        IconButton(onClick = { nav.navigate(AccountEditRoute()) }) { Icon(Icons.Default.Add, contentDescription = "Add an account manually", tint = Fin.palette.accent) }
+    }) {
+        val list = accounts ?: return@DetailScreen
+        item { NewAccountsCard(nav) }
+        if (list.isEmpty()) {
+            item {
+                EmptyMessage(
+                    "Import your statements and each account is set up from them. Questrade accounts appear when you connect.",
+                    Icons.Outlined.AccountBalance, action = "Import statements", onAction = { nav.navigate(ca.emarshall.finance.ui.ImportRoute()) },
+                )
+            }
+        }
+        list.groupBy { it.institutionEnum }.forEach { (inst, accs) ->
+            item { SectionHeader(inst.displayName) }
+            item {
+                Group {
                     accs.forEachIndexed { i, a ->
-                        ca.emarshall.finance.ui.design.GroupRow(
+                        GroupRow(
                             a.nickname,
                             subtitle = listOfNotNull(a.typeEnum.displayName, a.last4?.let { "••$it" }, a.currency.takeIf { it != "CAD" },
                                 a.questradeNumber?.let { "synced" }).joinToString(" · "),
-                            icon = when (inst) {
-                                ca.emarshall.finance.core.model.Institution.QUESTRADE -> androidx.compose.material.icons.Icons.AutoMirrored.Filled.ShowChart
-                                else -> if (a.typeEnum.isLiability) androidx.compose.material.icons.Icons.Default.CreditCard else androidx.compose.material.icons.Icons.Default.AccountBalance
+                            icon = when {
+                                inst == Institution.QUESTRADE -> Icons.AutoMirrored.Filled.ShowChart
+                                a.typeEnum.isLiability -> Icons.Default.CreditCard
+                                else -> Icons.Default.AccountBalance
                             },
-                            iconColor = when (inst) {
-                                ca.emarshall.finance.core.model.Institution.SCOTIABANK -> androidx.compose.ui.graphics.Color(0xFFEC111A)
-                                ca.emarshall.finance.core.model.Institution.CANADIAN_TIRE -> androidx.compose.ui.graphics.Color(0xFFD52B1E).copy(alpha = 0.85f)
-                                ca.emarshall.finance.core.model.Institution.QUESTRADE -> androidx.compose.ui.graphics.Color(0xFF34C77B)
-                                else -> androidx.compose.ui.graphics.Color(0xFF8E8E93)
-                            },
+                            iconColor = institutionColor(inst),
                             showChevron = true, divider = i < accs.size - 1,
                             onClick = { nav.navigate(AccountEditRoute(a.id)) },
                         )
@@ -102,6 +117,13 @@ fun AccountsScreen(nav: NavController, vm: AccountsViewModel = hiltViewModel()) 
             }
         }
     }
+}
+
+fun institutionColor(i: Institution): Color = when (i) {
+    Institution.SCOTIABANK -> Color(0xFFEC111A)
+    Institution.CANADIAN_TIRE -> Color(0xFFD52B1E).copy(alpha = 0.85f)
+    Institution.QUESTRADE -> Color(0xFF34C77B)
+    else -> Color(0xFF8E8E93)
 }
 
 @HiltViewModel
@@ -137,22 +159,23 @@ fun AccountEditScreen(nav: NavController, vm: AccountEditViewModel = hiltViewMod
     var currency by remember(existing) { mutableStateOf(existing?.currency ?: "CAD") }
     var confirmDelete by remember { mutableStateOf(false) }
 
-    Column(Modifier.fillMaxSize()) {
-        BackTopBar(if (vm.id == null) "Add account" else "Edit account", onBack = { nav.popBackStack() })
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedTextField(nickname, { nickname = it }, Modifier.fillMaxWidth(), label = { Text("Nickname (e.g. Everyday chequing)") }, singleLine = true)
-            Picker("Institution", institution, Institution.entries, { it.displayName }, { institution = it }, Modifier.fillMaxWidth())
-            Picker("Type", type, AccountType.entries, { it.displayName }, { type = it }, Modifier.fillMaxWidth())
-            OutlinedTextField(
-                last4, { v -> last4 = v.filter { it.isDigit() }.take(4) }, Modifier.fillMaxWidth(),
-                label = { Text("Last 4 digits (optional)") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            )
-            Text("Only the last 4 digits are stored, to match imported files to this account.", style = MaterialTheme.typography.bodySmall)
-            Picker("Currency", currency, listOf("CAD", "USD"), { it }, { currency = it }, Modifier.fillMaxWidth())
-            Button(onClick = { vm.save(nickname, institution, type, last4, currency) }, enabled = nickname.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("Save") }
-            if (vm.id != null && existing?.questradeNumber == null) {
-                OutlinedButton(onClick = { confirmDelete = true }, modifier = Modifier.fillMaxWidth()) { Text("Delete account and its transactions") }
+    DetailScreen(if (vm.id == null) "New account" else "Edit account", onBack = { nav.popBackStack() }) {
+        item {
+            FinCard {
+                FinTextField(nickname, { nickname = it }, "Name", placeholder = "e.g. Everyday chequing")
+                Picker("Bank", institution, Institution.entries, { it.displayName }, { institution = it }, Modifier.fillMaxWidth())
+                Picker("Kind of account", type, AccountType.entries, { it.displayName }, { type = it }, Modifier.fillMaxWidth())
+                FinTextField(
+                    last4, { v -> last4 = v.filter { it.isDigit() }.take(4) }, "Last 4 digits (optional)",
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                )
+                Segmented(listOf("CAD", "USD"), currency, { it }, { currency = it })
             }
+        }
+        item { Footnote("Only the last 4 digits are stored, to match statements to this account.") }
+        item { PrimaryButton("Save", { vm.save(nickname, institution, type, last4, currency) }, enabled = nickname.isNotBlank()) }
+        if (vm.id != null && existing?.questradeNumber == null) {
+            item { SecondaryButton("Delete account and its transactions", { confirmDelete = true }, destructive = true) }
         }
     }
     if (confirmDelete) {

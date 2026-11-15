@@ -33,7 +33,22 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.navigation.NavController
 import ca.emarshall.finance.data.ExportRepository
-import ca.emarshall.finance.ui.BackTopBar
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Archive
+import androidx.compose.material.icons.outlined.TableChart
+import ca.emarshall.finance.ui.design.DetailScreen
+import ca.emarshall.finance.ui.design.FinCard
+import ca.emarshall.finance.ui.design.Footnote
+import ca.emarshall.finance.ui.design.Group
+import ca.emarshall.finance.ui.design.GroupRow
+import ca.emarshall.finance.ui.design.Notice
+import ca.emarshall.finance.ui.design.NoticeTone
+import ca.emarshall.finance.ui.design.PrimaryButton
+import ca.emarshall.finance.ui.design.SecondaryButton
+import ca.emarshall.finance.ui.design.SectionHeader
+import ca.emarshall.finance.ui.design.Segmented
+import ca.emarshall.finance.ui.theme.Fin
 import ca.emarshall.finance.ui.SectionCard
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -72,31 +87,36 @@ fun SummaryScreen(nav: NavController, vm: SummaryViewModel = hiltViewModel()) {
     val csvLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { it?.let(vm::exportCsv) }
     val backupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { it?.let(vm::exportAll) }
 
-    Column(Modifier.fillMaxSize()) {
-        BackTopBar("Summary & export", onBack = { nav.popBackStack() })
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("A Markdown summary to paste into Claude for financial advice. Account nicknames only — no account numbers.")
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(3, 6, 12, 24).forEach { m -> FilterChip(months == m, { vm.generate(m) }, label = { Text("$m months") }) }
+    val pal = Fin.palette
+    DetailScreen("Summary & export", onBack = { nav.popBackStack() }) {
+        message?.let { m -> item { Notice(m, NoticeTone.SUCCESS) } }
+        item { SectionHeader("Summary") }
+        item { Footnote("A Markdown summary to paste into any AI chat for advice. Account nicknames only, never account numbers.") }
+        item { Segmented(listOf(3, 6, 12, 24), months, { "$it mo" }, { vm.generate(it) }) }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                PrimaryButton("Share", { md?.let { share(context, it) } }, Modifier.weight(1f), enabled = md != null)
+                SecondaryButton("Copy", { md?.let { copy(context, it) } }, Modifier.weight(1f), enabled = md != null)
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { md?.let { share(context, it) } }, enabled = md != null) { Text("Share") }
-                OutlinedButton(onClick = { md?.let { copy(context, it) } }, enabled = md != null) { Text("Copy") }
-            }
-            SectionCard("Preview") {
-                Text(md ?: "Building…", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall, modifier = Modifier.horizontalScroll(rememberScrollState()))
-            }
-            SectionCard("Export") {
-                OutlinedButton(onClick = { csvLauncher.launch("transactions-${LocalDate.now()}.csv") }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Export all transactions as CSV")
-                }
-                OutlinedButton(onClick = { backupLauncher.launch("finance-backup-${LocalDate.now()}.json") }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Export all data (backup)")
-                }
-                Text("Exports are not encrypted. Save them somewhere private.", style = MaterialTheme.typography.bodySmall)
-            }
-            message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
         }
+        item {
+            FinCard {
+                Text(
+                    md ?: "Building…", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall, color = pal.secondaryLabel,
+                    modifier = Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()).horizontalScroll(rememberScrollState()),
+                )
+            }
+        }
+        item { SectionHeader("Export") }
+        item {
+            Group {
+                GroupRow("Transactions as CSV", subtitle = "For a spreadsheet", icon = Icons.Outlined.TableChart, iconColor = pal.chart[4], showChevron = true,
+                    onClick = { csvLauncher.launch("transactions-${LocalDate.now()}.csv") })
+                GroupRow("Everything (backup)", subtitle = "All data as JSON", icon = Icons.Outlined.Archive, iconColor = pal.chart[2], showChevron = true, divider = false,
+                    onClick = { backupLauncher.launch("finance-backup-${LocalDate.now()}.json") })
+            }
+        }
+        item { Footnote("Exports aren't encrypted. Save them somewhere private.") }
     }
 }
 

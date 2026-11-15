@@ -67,7 +67,19 @@ import androidx.compose.material3.OutlinedTextField
 import ca.emarshall.finance.ui.accounts.NewAccountsCard
 import ca.emarshall.finance.data.institutionEnum
 import ca.emarshall.finance.data.typeEnum
-import ca.emarshall.finance.ui.BackTopBar
+import ca.emarshall.finance.core.money.Money
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Icon
+import ca.emarshall.finance.ui.design.FinTextField
+import ca.emarshall.finance.ui.design.Footnote
+import ca.emarshall.finance.ui.design.NavBar
+import ca.emarshall.finance.ui.design.Notice
+import ca.emarshall.finance.ui.design.NoticeTone
+import ca.emarshall.finance.ui.design.PrimaryButton
+import ca.emarshall.finance.ui.design.SecondaryButton
+import ca.emarshall.finance.ui.design.ValueRow
+import ca.emarshall.finance.ui.design.MenuRow
+import ca.emarshall.finance.ui.design.SwitchRow
 import ca.emarshall.finance.ui.LabeledRow
 import ca.emarshall.finance.ui.MoneyText
 import ca.emarshall.finance.ui.Picker
@@ -95,9 +107,9 @@ fun ImportScreen(nav: NavController, vm: ImportViewModel = hiltViewModel()) {
     val folder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri -> if (uri != null) vm.importFolder(uri) }
 
     Column(Modifier.fillMaxSize().background(Fin.palette.background)) {
-        BackTopBar("Import", onBack = { nav.popBackStack() }, actions = {
-            if (vm.inBatch && step !is ImportStep.Batch) TextButton(onClick = vm::backToBatch) { Text("Batch") }
-        })
+        NavBar("Import", onBack = { nav.popBackStack() }) {
+            if (vm.inBatch && step !is ImportStep.Batch) TextButton(onClick = vm::backToBatch) { Text("All files") }
+        }
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -110,7 +122,7 @@ fun ImportScreen(nav: NavController, vm: ImportViewModel = hiltViewModel()) {
                     }
                 }
                 is ImportStep.ChooseAccount -> {
-                    s.reason?.let { Text("Needs a quick check: $it", color = MaterialTheme.colorScheme.error) }
+                    s.reason?.let { Notice(it, NoticeTone.WARNING) }
                     ChooseAccount(s.detected, accounts, vm.preselectedAccountId, vm::chooseAccount, vm::createAccount)
                 }
                 is ImportStep.Batch -> BatchStep(s, vm, nav)
@@ -118,8 +130,8 @@ fun ImportScreen(nav: NavController, vm: ImportViewModel = hiltViewModel()) {
                 is ImportStep.Preview -> PreviewStep(s, vm)
                 is ImportStep.Done -> DoneStep(s, vm, nav, onView = { nav.navigate(TransactionsRoute(accountId = s.result.accountId)) })
                 is ImportStep.Failed -> {
-                    Text(s.message, color = MaterialTheme.colorScheme.error)
-                    Button(onClick = { vm.restart() }) { Text("Try another file") }
+                    Notice(s.message, NoticeTone.ERROR)
+                    PrimaryButton("Try another file", { vm.restart() })
                 }
             }
         }
@@ -174,7 +186,7 @@ private fun BatchStep(s: ImportStep.Batch, vm: ImportViewModel, nav: NavControll
             GroupRow(f.name, subtitle = subtitle, icon = icon, iconColor = color, divider = i < s.files.size - 1)
         }
     }
-    if (!s.working) Button(onClick = { vm.restart() }, modifier = Modifier.fillMaxWidth().height(50.dp)) { Text("Import more") }
+    if (!s.working) PrimaryButton("Import more", { vm.restart() })
 }
 
 @Composable
@@ -188,8 +200,8 @@ private fun PickFile(onFiles: () -> Unit, onFolder: () -> Unit) {
             color = white.copy(alpha = 0.85f), style = MaterialTheme.typography.bodyMedium,
         )
     }
-    Button(onClick = onFiles, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("Choose files") }
-    OutlinedButton(onClick = onFolder, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("Import a whole folder") }
+    PrimaryButton("Choose files", onFiles)
+    SecondaryButton("Import a whole folder", onFolder)
     SectionHeader("Works with")
     Group {
         GroupRow("PDF statements", subtitle = "Scotiabank chequing, Scotia Visa, Triangle Mastercard", icon = Icons.Default.Description)
@@ -212,27 +224,21 @@ private fun ChooseAccount(
 ) {
     val candidates = accounts.filter { !it.typeEnum.isInvestment || it.questradeNumber == null }
     var selected by remember(d) { mutableStateOf(candidates.firstOrNull { it.id == (preselected ?: d.suggestedAccountId) }) }
-    SectionCard("Detected") {
-        LabeledRow("File") { Text(d.file.fileName, maxLines = 1) }
-        LabeledRow("Format") { Text(d.file.format.name) }
-        LabeledRow("Bank") { Text(ImportRepository.institutionLabel(d.hint.institution)) }
-        d.hint.accountType?.let { LabeledRow("Account type") { Text(it.displayName) } }
-        d.hint.last4?.let { LabeledRow("Ending in") { Text("••$it") } }
+    SectionHeader("From the file")
+    Group {
+        GroupRow(d.file.fileName, subtitle = listOfNotNull(
+            d.file.format.name, ImportRepository.institutionLabel(d.hint.institution), d.hint.accountType?.displayName, d.hint.last4?.let { "••$it" },
+        ).joinToString(" · "), icon = Icons.Default.Description, divider = d.statement != null)
         d.statement?.let { st ->
-            LabeledRow("Rows") { Text(st.transactions.size.toString()) }
-            if (st.dateFrom != null && st.dateTo != null) LabeledRow("Period") { Text("${st.dateFrom!!.pretty()} – ${st.dateTo!!.pretty()}") }
+            val period = if (st.dateFrom != null && st.dateTo != null) "${st.dateFrom!!.pretty()} – ${st.dateTo!!.pretty()}" else null
+            GroupRow(period ?: "Transactions", value = "${st.transactions.size} rows", divider = false)
         }
     }
-    d.previousImport?.let {
-        Text(
-            "You imported this exact file before (${it.fileName}). Rows already in the app will be skipped.",
-            color = MaterialTheme.colorScheme.error,
-        )
-    }
+    d.previousImport?.let { Notice("You imported this exact file before. Rows already in the app will be skipped.") }
     val fitting = candidates.filter { AccountMatcher.compatible(d.hint, AccountRef(it.id, it.institutionEnum, it.typeEnum, it.allLast4)) }
     if (selected != null) {
         Picker("Which account is this?", selected, candidates, { "${it.nickname} (${it.institutionEnum.displayName}${it.last4?.let { l -> " ••$l" } ?: ""})" }, { selected = it }, Modifier.fillMaxWidth(), "Choose an account")
-        Button(onClick = { selected?.let { onChoose(d, it) } }, modifier = Modifier.fillMaxWidth()) { Text("Continue") }
+        PrimaryButton("Continue", { selected?.let { onChoose(d, it) } })
         TextButton(onClick = { selected = null }) { Text("It's a different account: set up a new one") }
         return
     }
@@ -247,14 +253,12 @@ private fun ChooseAccount(
             if (guess != null) "Is this right? Change anything that isn't." else "The file doesn't say which bank or account it's from. What is it?",
             style = MaterialTheme.typography.bodyMedium, color = Fin.palette.secondaryLabel,
         )
-        OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text("Name") }, singleLine = true)
+        FinTextField(name, { name = it }, "Name")
         Picker("Bank", inst, Institution.entries.filter { it != Institution.QUESTRADE }, { it.displayName }, { inst = it }, Modifier.fillMaxWidth())
         Picker("Kind of account", type, AccountType.entries.filter { !it.isInvestment }, { it.displayName }, { type = it }, Modifier.fillMaxWidth())
         d.hint.last4?.let { Text("Ending in ••$it", style = MaterialTheme.typography.bodySmall, color = Fin.palette.secondaryLabel) }
     }
-    Button(onClick = { onCreate(d, name.trim(), inst, type) }, enabled = name.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
-        Text(if (guess != null) "Yes, set it up" else "Set it up")
-    }
+    PrimaryButton(if (guess != null) "Yes, set it up" else "Set it up", { onCreate(d, name.trim(), inst, type) }, enabled = name.isNotBlank())
     if (candidates.isNotEmpty()) {
         SectionHeader("Or add it to an account you have")
         Group {
@@ -299,98 +303,116 @@ private fun MappingEditor(m: ImportStep.Mapping, vm: ImportViewModel) {
         )
     }.getOrNull()
 
-    Text("Map the columns", style = MaterialTheme.typography.titleLarge)
-    m.notes.forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
-    SectionCard("First rows of the file") {
+    SectionHeader("Map the columns")
+    m.notes.forEach { Footnote(it) }
+    FinCard {
+        Text("First rows of the file", style = MaterialTheme.typography.labelMedium, color = Fin.palette.secondaryLabel)
         Column(Modifier.horizontalScroll(rememberScrollState())) {
             sampleRows.take(5).forEach { r -> Text(r.joinToString("  |  "), fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall) }
         }
     }
-    LabeledRow("First row is a header") { Switch(hasHeader, { hasHeader = it }) }
-    Picker("Date column", dateCol, columns, ::colName, { dateCol = it }, Modifier.fillMaxWidth())
-    Picker("Date format", dateFormat, m.dateOptions, { it }, { dateFormat = it }, Modifier.fillMaxWidth())
-    Text("Description column(s)", style = MaterialTheme.typography.labelLarge)
-    columns.forEach { c ->
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(c in descCols, { on -> descCols = if (on) descCols + c else descCols - c })
-            Text(colName(c))
+    Group {
+        SwitchRow("First row is a header", hasHeader, { hasHeader = it })
+        MenuRow("Date", dateCol, columns, ::colName, { dateCol = it })
+        MenuRow("Date format", dateFormat, m.dateOptions, { it }, { dateFormat = it })
+        MenuRow("How amounts are shown", sign, SignConvention.entries, { SHORT_SIGN.getValue(it) }, { sign = it })
+        when (sign) {
+            SignConvention.DEBIT_CREDIT -> {
+                MenuRow("Money out (debit)", debitCol, columns, ::colName, { debitCol = it })
+                MenuRow("Money in (credit)", creditCol, columns, ::colName, { creditCol = it })
+            }
+            SignConvention.TYPE_COLUMN -> {
+                MenuRow("Amount", amountCol, columns, ::colName, { amountCol = it })
+                MenuRow("Debit/Credit", typeCol, columns, ::colName, { typeCol = it })
+            }
+            else -> MenuRow("Amount", amountCol, columns, ::colName, { amountCol = it })
+        }
+        MenuRow("Running balance", balanceCol, listOf<Int?>(null) + columns, { it?.let(::colName) ?: "None" }, { balanceCol = it }, divider = false)
+    }
+    Footnote(ImportViewModel.SIGN_LABELS.getValue(sign))
+    SectionHeader("Description")
+    Group {
+        columns.forEachIndexed { i, c ->
+            GroupRow(colName(c), divider = i < columns.size - 1, onClick = { descCols = if (c in descCols) descCols - c else descCols + c }) {
+                Checkbox(c in descCols, { on -> descCols = if (on) descCols + c else descCols - c })
+            }
         }
     }
-    Text("How amounts are shown", style = MaterialTheme.typography.labelLarge)
-    SignConvention.entries.forEach { sc ->
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            RadioButton(sign == sc, { sign = sc })
-            Text(ImportViewModel.SIGN_LABELS.getValue(sc))
-        }
-    }
-    when (sign) {
-        SignConvention.DEBIT_CREDIT -> {
-            Picker("Debit (money out) column", debitCol, columns, ::colName, { debitCol = it }, Modifier.fillMaxWidth())
-            Picker("Credit (money in) column", creditCol, columns, ::colName, { creditCol = it }, Modifier.fillMaxWidth())
-        }
-        SignConvention.TYPE_COLUMN -> {
-            Picker("Amount column", amountCol, columns, ::colName, { amountCol = it }, Modifier.fillMaxWidth())
-            Picker("Debit/Credit column", typeCol, columns, ::colName, { typeCol = it }, Modifier.fillMaxWidth())
-        }
-        else -> Picker("Amount column", amountCol, columns, ::colName, { amountCol = it }, Modifier.fillMaxWidth())
-    }
-    Picker("Running balance column (optional)", balanceCol, listOf<Int?>(null) + columns, { it?.let(::colName) ?: "None" }, { balanceCol = it }, Modifier.fillMaxWidth(), "None")
 
     val sample = profile?.let { p -> runCatching { CsvStatementParser.parse(m.detected.csvText.orEmpty(), p) }.getOrNull() }
-    SectionCard("How it reads") {
-        if (sample == null) Text("Pick the columns above.")
-        sample?.transactions?.take(4)?.forEach { t -> LabeledRow("${t.date} ${t.description.take(28)}") { MoneyText(t.amountCents) } }
-        if (sample != null && sample.warnings.isNotEmpty()) Text("${sample.warnings.size} row(s) can't be read with this mapping.", color = MaterialTheme.colorScheme.error)
+    SectionHeader("How it reads")
+    Group {
+        val rows = sample?.transactions?.take(4).orEmpty()
+        if (rows.isEmpty()) GroupRow("Pick the columns above", divider = false)
+        rows.forEachIndexed { i, t ->
+            GroupRow(t.description, subtitle = t.date.pretty(), value = Money.format(t.amountCents, t.currency ?: m.account.currency, true),
+                valueColor = if (t.amountCents > 0) Fin.palette.positive else Fin.palette.label, divider = i < rows.size - 1)
+        }
     }
-    Button(onClick = { profile?.let { vm.applyMapping(m, it) } }, enabled = profile != null && (sample?.transactions?.isNotEmpty() == true), modifier = Modifier.fillMaxWidth()) {
-        Text("Use this mapping")
-    }
+    if (sample != null && sample.warnings.isNotEmpty()) Notice("${sample.warnings.size} row(s) can't be read with this mapping.", NoticeTone.WARNING)
+    PrimaryButton("Use this mapping", { profile?.let { vm.applyMapping(m, it) } }, enabled = profile != null && (sample?.transactions?.isNotEmpty() == true))
 }
+
+private val SHORT_SIGN = mapOf(
+    SignConvention.AMOUNT_AS_IS to "One column",
+    SignConvention.AMOUNT_INVERTED to "One column, inverted",
+    SignConvention.DEBIT_CREDIT to "Debit and credit",
+    SignConvention.TYPE_COLUMN to "Amount + type",
+)
 
 @Composable
 private fun PreviewStep(s: ImportStep.Preview, vm: ImportViewModel) {
     val p = s.preview
     val st = p.statement
-    SectionCard("Preview — ${p.account.nickname}") {
-        if (st.dateFrom != null && st.dateTo != null) LabeledRow("Dates") { Text("${st.dateFrom!!.pretty()} – ${st.dateTo!!.pretty()}") }
-        LabeledRow("Rows in file") { Text(st.transactions.size.toString()) }
-        LabeledRow("New") { Text(p.dedup.newRows.size.toString()) }
-        LabeledRow("Already imported (skipped)") { Text(p.dedup.duplicateCount.toString()) }
-        LabeledRow("Money in (new rows)") { MoneyText(p.moneyInCents) }
-        LabeledRow("Money out (new rows)") { MoneyText(-p.moneyOutCents) }
-        if (st.balances.isNotEmpty()) LabeledRow("Balances found") { Text(st.balances.size.toString()) }
+    SectionHeader(p.account.nickname)
+    Group {
+        if (st.dateFrom != null && st.dateTo != null) ValueRow("Dates", "${st.dateFrom!!.pretty()} – ${st.dateTo!!.pretty()}")
+        ValueRow("New transactions", p.dedup.newRows.size.toString())
+        if (p.dedup.duplicateCount > 0) ValueRow("Already in the app", p.dedup.duplicateCount.toString())
+        ValueRow("Money in", Money.format(p.moneyInCents, p.account.currency, true), Fin.palette.positive)
+        ValueRow("Money out", Money.format(-p.moneyOutCents, p.account.currency, true), divider = false)
     }
-    if (st.warnings.isNotEmpty()) {
-        SectionCard("Check these") { st.warnings.forEach { Text("• $it", color = MaterialTheme.colorScheme.error) } }
+    st.warnings.forEach { Notice(it, NoticeTone.WARNING) }
+    if (p.dedup.newRows.isNotEmpty()) {
+        SectionHeader("First new rows")
+        Group {
+            val rows = p.dedup.newRows.take(8)
+            rows.forEachIndexed { i, k ->
+                GroupRow(
+                    k.tx.description, subtitle = k.tx.date.pretty(), value = Money.format(k.tx.amountCents, k.tx.currency ?: p.account.currency, true),
+                    valueColor = if (k.tx.amountCents > 0) Fin.palette.positive else Fin.palette.label, divider = i < rows.size - 1,
+                )
+            }
+        }
+    } else {
+        Notice("Nothing new in this file.")
     }
-    SectionCard("First new rows") {
-        p.dedup.newRows.take(8).forEach { k -> LabeledRow("${k.tx.date} · ${k.tx.description.take(30)}") { MoneyText(k.tx.amountCents) } }
-        if (p.dedup.newRows.isEmpty()) Text("Nothing new in this file.")
-    }
-    Button(onClick = { vm.commit(p) }, enabled = p.dedup.newRows.isNotEmpty(), modifier = Modifier.fillMaxWidth()) {
-        Text("Import ${p.dedup.newRows.size} transactions")
-    }
+    PrimaryButton("Import ${p.dedup.newRows.size} transactions", { vm.commit(p) }, enabled = p.dedup.newRows.isNotEmpty())
     if (p.profile != null) TextButton(onClick = { vm.editMapping(p) }) { Text("Change column mapping") }
 }
 
 @Composable
 private fun DoneStep(s: ImportStep.Done, vm: ImportViewModel, nav: NavController, onView: () -> Unit) {
     if (s.undone) {
-        Text("Import undone. Nothing from that file remains.", style = MaterialTheme.typography.titleMedium)
-        Button(onClick = { vm.restart() }) { Text("Import another file") }
+        Notice("Import undone. Nothing from that file remains.", NoticeTone.SUCCESS)
+        PrimaryButton("Import another file", { vm.restart() })
         return
     }
-    Text("Imported into ${s.accountName}", style = MaterialTheme.typography.titleLarge)
+    val white = androidx.compose.ui.graphics.Color.White
+    HeroCard(Fin.palette.investGradient) {
+        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = white, modifier = Modifier.size(28.dp))
+        Text("Imported into ${s.accountName}", color = white, style = MaterialTheme.typography.headlineSmall)
+        Text(
+            "${s.result.newCount} new" + (if (s.result.duplicateCount > 0) " · ${s.result.duplicateCount} already there" else "") +
+                (if (s.result.transfersMatched > 0) " · ${s.result.transfersMatched} transfers matched" else ""),
+            color = white.copy(alpha = 0.85f), style = MaterialTheme.typography.bodyMedium,
+        )
+    }
     NewAccountsCard(nav)
-    SectionCard(null) {
-        LabeledRow("New transactions") { Text(s.result.newCount.toString()) }
-        LabeledRow("Duplicates skipped") { Text(s.result.duplicateCount.toString()) }
-        LabeledRow("Transfers matched") { Text(s.result.transfersMatched.toString()) }
+    Group {
+        GroupRow("See these transactions", icon = Icons.Default.TableChart, showChevron = true, onClick = onView)
+        GroupRow("Undo this import", icon = Icons.Default.ErrorOutline, iconColor = Fin.palette.negative, divider = false, onClick = { vm.undo(s) })
     }
-    Text("Transactions were categorised automatically. Fix any in the Transactions tab — the app can learn from it.", style = MaterialTheme.typography.bodySmall)
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Button(onClick = { vm.restart() }) { Text("Import another") }
-        OutlinedButton(onClick = { vm.undo(s) }) { Text("Undo this import") }
-    }
-    TextButton(onClick = onView) { Text("See these transactions") }
+    Footnote("Transactions were categorised automatically. Fix any in Activity and the app learns from it.")
+    PrimaryButton("Import another", { vm.restart() })
 }

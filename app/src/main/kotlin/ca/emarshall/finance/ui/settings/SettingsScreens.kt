@@ -50,7 +50,19 @@ import ca.emarshall.finance.BuildConfig
 import ca.emarshall.finance.data.ExportRepository
 import ca.emarshall.finance.data.SettingsRepository
 import ca.emarshall.finance.ui.AccountsRoute
-import ca.emarshall.finance.ui.BackTopBar
+import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.VisibilityOff
+import ca.emarshall.finance.ui.design.DetailScreen
+import ca.emarshall.finance.ui.design.Footnote
+import ca.emarshall.finance.ui.design.Group
+import ca.emarshall.finance.ui.design.GroupRow
+import ca.emarshall.finance.ui.design.MenuRow
+import ca.emarshall.finance.ui.design.SectionHeader
+import ca.emarshall.finance.ui.design.SwitchRow
+import ca.emarshall.finance.ui.theme.Fin
 import ca.emarshall.finance.ui.BillsRoute
 import ca.emarshall.finance.ui.CategoriesRoute
 import ca.emarshall.finance.ui.ClaudeSetupRoute
@@ -123,7 +135,7 @@ fun SettingsScreen(nav: NavController, vm: SettingsViewModel = hiltViewModel()) 
                     "Questrade (read-only) and, if you turn on the AI coach, to the AI provider you chose.",
                 Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall, color = p.secondaryLabel,
             )
-            if (deleted) Text("All data deleted.", Modifier.padding(16.dp), color = MaterialTheme.colorScheme.primary)
+            if (deleted) ca.emarshall.finance.ui.design.Notice("All data deleted.", ca.emarshall.finance.ui.design.NoticeTone.SUCCESS)
         }
     }
     if (confirm) {
@@ -146,36 +158,40 @@ fun SettingsScreen(nav: NavController, vm: SettingsViewModel = hiltViewModel()) 
 private fun Row(title: String, icon: ImageVector, color: Color, subtitle: String? = null, last: Boolean = false, onClick: () -> Unit) =
     ca.emarshall.finance.ui.design.GroupRow(title, subtitle = subtitle, icon = icon, iconColor = color, showChevron = true, divider = !last, onClick = onClick)
 
-@Composable
-private fun Item(label: String, icon: ImageVector, onClick: () -> Unit) {
-    ListItem(headlineContent = { Text(label) }, leadingContent = { Icon(icon, contentDescription = null) }, modifier = Modifier.clickable(onClick = onClick))
-    HorizontalDivider()
-}
 
 private val TIMEOUTS = listOf(0, 1, 5, 15, 30, 60)
 
 @Composable
 fun SecurityScreen(nav: NavController, vm: SettingsViewModel = hiltViewModel()) {
     val s by vm.settings.collectAsStateWithLifecycle()
-    Column(Modifier.fillMaxSize()) {
-        BackTopBar("App lock & privacy", onBack = { nav.popBackStack() })
-        val settings = s ?: return@Column
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            SectionCard("App lock") {
-                Text("The app asks for your fingerprint, face or screen lock when it opens and after it's been in the background.")
-                Picker(
+    val p = Fin.palette
+    DetailScreen("App lock & privacy", onBack = { nav.popBackStack() }) {
+        val settings = s ?: return@DetailScreen
+        item { SectionHeader("App lock") }
+        item {
+            Group {
+                MenuRow(
                     "Lock after", settings.lockTimeoutMinutes, TIMEOUTS,
-                    { if (it == 0) "Immediately" else if (it == 1) "1 minute" else "$it minutes" }, vm::setTimeout, Modifier.fillMaxWidth(),
+                    { if (it == 0) "Immediately" else if (it == 1) "1 minute" else "$it minutes" }, vm::setTimeout,
+                    icon = Icons.Default.Lock, iconColor = p.accent, divider = false,
                 )
             }
-            SectionCard("Screen privacy") {
-                LabeledRow("Hide in recent apps and block screenshots") { Switch(settings.blockScreenshots, vm::setBlockScreenshots) }
+        }
+        item { Footnote("Fingerprint, face or screen lock when the app opens and after it's been in the background.") }
+        item { SectionHeader("Screen privacy") }
+        item {
+            Group {
+                SwitchRow("Hide content and block screenshots", settings.blockScreenshots, vm::setBlockScreenshots,
+                    subtitle = "Also hides the app in Recents", icon = Icons.Default.VisibilityOff, iconColor = Color(0xFF8E8E93), divider = false)
             }
-            SectionCard("Where your data lives") {
-                Text("• Everything is in an encrypted database on this phone (SQLCipher). The key is protected by Android's Keystore.")
-                Text("• No cloud, no analytics, no ads. Backups and device-to-device transfer are turned off for this app.")
-                Text("• Internet connections go only to Questrade's login and API servers (read-only), plus your chosen AI provider if you turn on the optional AI coach.")
-                Text("• Bank data only comes in as files you import. The app never asks for bank passwords.")
+        }
+        item { SectionHeader("Where your data lives") }
+        item {
+            Group {
+                GroupRow("Encrypted on this phone", subtitle = "SQLCipher database; the key is protected by Android's Keystore", icon = Icons.Default.PhoneAndroid, iconColor = p.chart[4])
+                GroupRow("No cloud, analytics or ads", subtitle = "Backups and device transfer are off for this app", icon = Icons.Default.CloudOff, iconColor = p.chart[2])
+                GroupRow("Connections", subtitle = "Only Questrade (read-only), plus your chosen AI provider if you turn on the AI coach", icon = Icons.Default.Language, iconColor = p.chart[0])
+                GroupRow("No bank passwords", subtitle = "Bank data only comes in as files you import", icon = Icons.Default.Key, iconColor = p.chart[1], divider = false)
             }
         }
     }

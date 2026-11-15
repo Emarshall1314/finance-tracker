@@ -48,7 +48,25 @@ import ca.emarshall.finance.data.QuestradeStatus
 import ca.emarshall.finance.data.SettingsRepository
 import ca.emarshall.finance.data.typeEnum
 import ca.emarshall.finance.net.questrade.QuestradeAuthException
-import ca.emarshall.finance.ui.BackTopBar
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ShowChart
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.graphics.Color
+import ca.emarshall.finance.ui.design.DetailScreen
+import ca.emarshall.finance.ui.design.FinCard
+import ca.emarshall.finance.ui.design.FinTextField
+import ca.emarshall.finance.ui.design.Footnote
+import ca.emarshall.finance.ui.design.Group
+import ca.emarshall.finance.ui.design.GroupRow
+import ca.emarshall.finance.ui.design.HeroCard
+import ca.emarshall.finance.ui.design.LargeTitleScreen
+import ca.emarshall.finance.ui.design.Notice
+import ca.emarshall.finance.ui.design.PrimaryButton
+import ca.emarshall.finance.ui.design.SecondaryButton
+import ca.emarshall.finance.ui.design.SectionHeader
+import ca.emarshall.finance.ui.theme.Fin
 import ca.emarshall.finance.ui.LabeledRow
 import ca.emarshall.finance.ui.MoneyText
 import ca.emarshall.finance.ui.QuestradeRoute
@@ -106,18 +124,22 @@ fun InvestmentsScreen(nav: NavController, vm: InvestmentsViewModel = hiltViewMod
     val s by vm.settings.collectAsStateWithLifecycle()
     val v by vm.view.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
-    Column(Modifier.fillMaxSize()) {
-        Text("Investments", Modifier.statusBarsPadding().padding(start = 16.dp, top = 12.dp, bottom = 4.dp), style = MaterialTheme.typography.headlineLarge)
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            val status = s?.questradeStatus ?: return@Column
-            if (status != QuestradeStatus.CONNECTED) {
-                SectionCard(if (status == QuestradeStatus.DISCONNECTED) "Questrade needs reconnecting" else "Connect Questrade") {
-                    Text(s?.questradeMessage ?: "See your Questrade accounts, holdings, dividends and contributions here. Read-only: this app can never trade.")
-                    Button(onClick = { nav.navigate(QuestradeRoute) }) { Text("Connect") }
+    LargeTitleScreen("Investments") {
+        val status = s?.questradeStatus ?: return@LargeTitleScreen
+        if (status != QuestradeStatus.CONNECTED) {
+            item {
+                HeroCard(Fin.palette.investGradient, onClick = { nav.navigate(QuestradeRoute) }) {
+                    val white = Color.White
+                    Text(if (status == QuestradeStatus.DISCONNECTED) "Reconnect Questrade" else "Connect Questrade", color = white, style = MaterialTheme.typography.headlineSmall)
+                    Text(
+                        s?.questradeMessage ?: "See your accounts, holdings, dividends and contributions. Read-only: this app can never trade.",
+                        color = white.copy(alpha = 0.85f), style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text("Set up ›", color = white, style = MaterialTheme.typography.labelLarge)
                 }
             }
-            v?.let { InvestmentsContent(it, busy, vm::sync) }
         }
+        v?.let { view -> item { Column(verticalArrangement = Arrangement.spacedBy(16.dp)) { InvestmentsContent(view, busy, vm::sync) } } }
     }
 }
 
@@ -212,41 +234,56 @@ fun QuestradeConnectScreen(nav: NavController, vm: InvestmentsViewModel = hiltVi
     val message by vm.message.collectAsStateWithLifecycle()
     var token by remember { mutableStateOf("") }
     val context = LocalContext.current
-    Column(Modifier.fillMaxSize()) {
-        BackTopBar("Questrade", onBack = { nav.popBackStack() })
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (s?.questradeStatus == QuestradeStatus.CONNECTED) {
-                Text("Connected (read-only).", style = MaterialTheme.typography.titleMedium)
-                Text("The app syncs once a day in the background, which also keeps the connection alive.")
-                Button(onClick = vm::sync, enabled = !busy) { Text("Sync now") }
-                OutlinedButton(onClick = vm::disconnect, enabled = !busy) { Text("Disconnect and delete token") }
-            } else {
-                Text("Connect in four steps", style = MaterialTheme.typography.titleLarge)
-                SectionCard("1. Turn on API access") {
-                    Text("Sign in to Questrade on the web. Under your profile, open App Hub / API Centre and turn on API access if it's off.")
-                    OutlinedButton(onClick = {
-                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://login.questrade.com/APIAccess/UserApps.aspx")))
-                    }) { Text("Open the API Centre in your browser") }
-                }
-                SectionCard("2. Register a personal app") {
-                    Text("Click Register a personal app. Tick ONLY the read permissions: Retrieve balances, positions, orders and executions (account data) and Retrieve delayed and real-time market data.")
-                    Text("Leave trading permissions unticked. This app never trades.", style = MaterialTheme.typography.bodySmall)
-                }
-                SectionCard("3. Generate a token") {
-                    Text("Under your new app, click New manual authorization, then Generate new token. Copy it.")
-                    Text("A token works once and expires 7 days after it's created, so paste it here straight away.", style = MaterialTheme.typography.bodySmall)
-                }
-                SectionCard("4. Paste it here") {
-                    OutlinedTextField(
-                        token, { token = it.trim() }, Modifier.fillMaxWidth(), singleLine = true,
-                        label = { Text("Token") }, visualTransformation = PasswordVisualTransformation(),
-                    )
-                    Text("The token is stored encrypted on this phone only. It never leaves the phone except to Questrade.", style = MaterialTheme.typography.bodySmall)
-                    Button(onClick = { vm.connect(token); token = "" }, enabled = token.length >= 10 && !busy) { Text("Connect") }
+    val p = Fin.palette
+    DetailScreen("Questrade", onBack = { nav.popBackStack() }) {
+        message?.let { m -> item { Notice(m) } }
+        if (s?.questradeStatus == QuestradeStatus.CONNECTED) {
+            item {
+                Group {
+                    GroupRow("Connected", subtitle = "Read-only · syncs once a day, which keeps the connection alive",
+                        icon = Icons.AutoMirrored.Filled.ShowChart, iconColor = Color(0xFF34C77B), divider = false)
                 }
             }
-            if (busy) CircularProgressIndicator()
-            message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+            item { PrimaryButton("Sync now", vm::sync, loading = busy) }
+            item { SecondaryButton("Disconnect and delete token", vm::disconnect, enabled = !busy, destructive = true) }
+        } else {
+            item { SectionHeader("Connect in four steps") }
+            item {
+                Group {
+                    Step(1, "Turn on API access", "Sign in to Questrade on the web. Under your profile, open App Hub / API Centre and turn on API access if it's off.")
+                    GroupRow("Open the API Centre", icon = Icons.AutoMirrored.Filled.OpenInNew, iconColor = p.accent, showChevron = true, onClick = {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://login.questrade.com/APIAccess/UserApps.aspx")))
+                    })
+                    Step(2, "Register a personal app", "Tick ONLY the read permissions: account data (balances, positions, orders, executions) and market data. Leave trading unticked; this app never trades.")
+                    Step(3, "Generate a token", "Under your new app: New manual authorization, then Generate new token. Copy it. It works once and expires after 7 days.", divider = false)
+                }
+            }
+            item { SectionHeader("Paste it here") }
+            item {
+                FinCard {
+                    FinTextField(token, { token = it.trim() }, "Token", visualTransformation = PasswordVisualTransformation())
+                    PrimaryButton("Connect", { vm.connect(token); token = "" }, enabled = token.length >= 10, loading = busy)
+                }
+            }
+            item { Footnote("The token is stored encrypted on this phone and only ever sent to Questrade.") }
         }
+    }
+}
+
+/** A numbered instruction inside a [Group]. */
+@Composable
+private fun Step(n: Int, title: String, body: String, divider: Boolean = true) {
+    val p = Fin.palette
+    Column {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Box(Modifier.size(28.dp).clip(CircleShape).background(p.accent.copy(alpha = 0.12f)), contentAlignment = Alignment.Center) {
+                Text("$n", color = p.accent, style = MaterialTheme.typography.labelLarge)
+            }
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.bodyLarge)
+                Text(body, style = MaterialTheme.typography.bodySmall, color = p.secondaryLabel)
+            }
+        }
+        if (divider) androidx.compose.material3.HorizontalDivider(Modifier.padding(start = 56.dp), color = p.separator, thickness = 0.5.dp)
     }
 }
