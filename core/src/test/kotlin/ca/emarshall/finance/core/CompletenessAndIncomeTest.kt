@@ -8,6 +8,7 @@ import ca.emarshall.finance.core.statements.AccountCoverage
 import ca.emarshall.finance.core.statements.MonthCompleteness
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
 import java.time.YearMonth
@@ -153,5 +154,32 @@ class MoneyFlowTest {
         fun f(day: Int, cents: Long) = TxFact(++id, 1, LocalDate.of(2026, 10, day), cents, "CAD", "shopping", "Shopping", CategoryKind.EXPENSE, "M", false, AccountKind.CARD)
         val d = Analytics(listOf(f(3, -5_000), f(3, -2_000), f(4, -1_000), f(4, 1_500), f(9, -700))).dailySpending(YearMonth.of(2026, 10))
         assertEquals(mapOf(3 to 7_000L, 9 to 700L), d) // the 4th nets to a refund, so it isn't a spending day
+    }
+}
+
+class HighlightsTest {
+    private var id = 0L
+    private fun f(month: Int, day: Int, cents: Long, merchant: String, key: String, kind: CategoryKind = CategoryKind.EXPENSE, acct: AccountKind = AccountKind.BANK) =
+        TxFact(++id, 1, LocalDate.of(2026, month, day), cents, "CAD", key, key.replaceFirstChar { it.uppercase() }, kind, merchant, false, acct)
+
+    @Test fun aMonthInAFewNumbers() {
+        val facts = ArrayList<TxFact>()
+        for (m in 7..10) {
+            facts += f(m, 1, 400_000, "Payroll", "paycheque", CategoryKind.INCOME)
+            facts += f(m, 2, -180_000, "Landlord", "rent")
+            facts += f(m, 5, if (m == 10) -60_000 else -30_000, "Sushi Place", "dining")
+            repeat(5) { facts += f(m, 10 + it, -500, "Tim Hortons", "coffee") }
+        }
+        val h = ca.emarshall.finance.core.insights.Highlights.forMonth(facts, YearMonth.of(2026, 10), emptyList())
+        val byKind = h.associateBy { it.kind }
+        // October: 4,000 in; 1,800 + 600 + 25 out = 1,575 kept (39%), 300 less than the usual 1,875.
+        assertEquals("39%", byKind.getValue(ca.emarshall.finance.core.insights.HighlightKind.SAVED).value)
+        assertTrue(byKind.getValue(ca.emarshall.finance.core.insights.HighlightKind.SAVED).caption.contains("$300 less than your usual month"))
+        assertEquals("▲ $300", byKind.getValue(ca.emarshall.finance.core.insights.HighlightKind.CATEGORY_UP).value)
+        assertTrue(byKind.getValue(ca.emarshall.finance.core.insights.HighlightKind.CATEGORY_UP).caption.startsWith("Dining: $600, usually about $300"))
+        assertEquals("$1,800", byKind.getValue(ca.emarshall.finance.core.insights.HighlightKind.BIGGEST_PURCHASE).value)
+        assertEquals("5×", byKind.getValue(ca.emarshall.finance.core.insights.HighlightKind.MOST_VISITED).value)
+        assertEquals("24", byKind.getValue(ca.emarshall.finance.core.insights.HighlightKind.QUIET_DAYS).value) // 31 days, 7 with spending
+        assertTrue(ca.emarshall.finance.core.insights.Highlights.forMonth(facts, YearMonth.of(2025, 1), emptyList()).isEmpty())
     }
 }

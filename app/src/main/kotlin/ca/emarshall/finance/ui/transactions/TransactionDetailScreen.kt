@@ -62,6 +62,22 @@ class TransactionDetailViewModel @Inject constructor(
     val row = transactions.row(id).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     val allCategories = categories.categories.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /** Every payment to the same place, for "how much do I spend here". */
+    val history = kotlinx.coroutines.flow.combine(transactions.row(id), transactions.rows) { t, all ->
+        if (t == null || t.transferLinkId != null || t.amountCents >= 0) return@combine null
+        val same = all.filter { it.merchant.equals(t.merchant, ignoreCase = true) && it.amountCents < 0 && it.transferLinkId == null && it.currency == t.currency }
+        if (same.size < 2) return@combine null
+        val end = java.time.YearMonth.from(same.maxOf { it.date })
+        val months = (11 downTo 0).map { end.minusMonths(it.toLong()) }
+        MerchantHistory(
+            count = same.size,
+            totalCents = -same.sumOf { it.amountCents },
+            since = same.minOf { it.date },
+            monthly = months.map { m -> m to -same.filter { java.time.YearMonth.from(it.date) == m }.sumOf { it.amountCents } },
+            recent = same.filter { it.id != t.id }.sortedByDescending { it.date }.take(4),
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
     /** After a manual recategorisation: offer "Always do this for <merchant>". */
     val offerLearn = MutableStateFlow<CategoryEntity?>(null)
     val message = MutableStateFlow<String?>(null)
@@ -84,12 +100,21 @@ class TransactionDetailViewModel @Inject constructor(
     fun unlinkTransfer() = viewModelScope.launch { transactions.unlinkTransfer(id); message.value = "Unlinked. These now count as income/spending." }
 }
 
+data class MerchantHistory(
+    val count: Int,
+    val totalCents: Long,
+    val since: java.time.LocalDate,
+    val monthly: List<Pair<java.time.YearMonth, Long>>,
+    val recent: List<ca.emarshall.finance.data.db.TxRow>,
+)
+
 @Composable
 fun TransactionDetailScreen(nav: NavController, vm: TransactionDetailViewModel = hiltViewModel()) {
     val t by vm.row.collectAsStateWithLifecycle()
     val cats by vm.allCategories.collectAsStateWithLifecycle()
     val learn by vm.offerLearn.collectAsStateWithLifecycle()
     val message by vm.message.collectAsStateWithLifecycle()
+    val history by vm.history.collectAsStateWithLifecycle()
     var notes by remember { mutableStateOf<String?>(null) }
 
     Column(Modifier.fillMaxSize().background(ca.emarshall.finance.ui.theme.Fin.palette.background)) {
@@ -149,6 +174,36 @@ fun TransactionDetailScreen(nav: NavController, vm: TransactionDetailViewModel =
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         if (!tx.transferLocked) ca.emarshall.finance.ui.design.PrimaryButton("Confirm", vm::confirmTransfer, Modifier.weight(1f))
                         ca.emarshall.finance.ui.design.SecondaryButton("Not a transfer", vm::unlinkTransfer, Modifier.weight(1f))
+                    }
+                }
+            }
+
+            history?.let { h ->
+                ca.emarshall.finance.ui.design.SectionHeader("At ${tx.merchant}", "See all") { nav.navigate(ca.emarshall.finance.ui.TransactionsRoute(query = tx.merchant)) }
+                ca.emarshall.finance.ui.design.FinCard {
+                    Text(
+                        "${ca.emarshall.finance.core.money.Money.formatWhole(h.totalCents)} over ${h.count} payments",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(
+                        "Since ${h.since.pretty()} · about ${ca.emarshall.finance.core.money.Money.format(h.totalCents / h.count)} each time",
+                        style = MaterialTheme.typography.bodySmall, color = p.secondaryLabel,
+                    )
+                    ca.emarshall.finance.ui.design.BarChart(
+                        bars = h.monthly.map { (m, cents) -> ca.emarshall.finance.ui.design.BarDatum(m.format(ca.emarshall.finance.ui.SHORT_MONTH).take(1), cents, p.accent) },
+                        selected = h.monthly.indexOfFirst { it.first == java.time.YearMonth.from(tx.date) }.takeIf { it >= 0 },
+                        onSelect = { }, height = 110.dp,
+                        description = "Spending at ${tx.merchant} by month.",
+                    )
+                }
+                if (h.recent.isNotEmpty()) {
+                    Group {
+                        h.recent.forEachIndexed { i, r ->
+                            ca.emarshall.finance.ui.design.GroupRow(
+                                r.date.pretty(), subtitle = r.accountNickname, value = ca.emarshall.finance.core.money.Money.format(-r.amountCents),
+                                showChevron = true, divider = i < h.recent.size - 1, onClick = { nav.navigate(TransactionRoute(r.id)) },
+                            )
+                        }
                     }
                 }
             }

@@ -116,7 +116,9 @@ class TransactionsViewModel @Inject constructor(
         TxFilter(
             accountId = route.accountId.takeIf { it > 0 },
             categoryId = route.categoryId.takeIf { it > 0 },
-            period = if (route.month.isNotEmpty()) Period.CUSTOM_MONTH else Period.LAST_3,
+            query = route.query,
+            // A search for one place (from a transaction's "See all") looks through everything.
+            period = if (route.month.isNotEmpty()) Period.CUSTOM_MONTH else if (route.query.isNotEmpty()) Period.ALL else Period.LAST_3,
             month = route.month.takeIf { it.isNotEmpty() }?.let { runCatching { YearMonth.parse(it) }.getOrNull() },
         ),
     )
@@ -176,11 +178,11 @@ fun TransactionsScreen(nav: NavController, route: TransactionsRoute, vm: Transac
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Picker(
                     "Account", accounts.firstOrNull { it.id == f.accountId }, listOf<AccountEntity?>(null) + accounts,
-                    { it?.nickname ?: "All accounts" }, { a -> vm.update { it.copy(accountId = a?.id) } }, Modifier.weight(1f), "All accounts",
+                    { it?.nickname ?: "All" }, { a -> vm.update { it.copy(accountId = a?.id) } }, Modifier.weight(1f), "All",
                 )
                 Picker(
                     "Category", categories.firstOrNull { it.id == f.categoryId }, listOf<CategoryEntity?>(null) + categories,
-                    { it?.name ?: "All categories" }, { c -> vm.update { it.copy(categoryId = c?.id) } }, Modifier.weight(1f), "All categories",
+                    { it?.name ?: "All" }, { c -> vm.update { it.copy(categoryId = c?.id) } }, Modifier.weight(1f), "All",
                 )
             }
         }

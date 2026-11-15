@@ -70,7 +70,7 @@ import kotlin.reflect.KClass
 
 // ---- Routes (type-safe Navigation Compose) ----
 @Serializable object OverviewRoute
-@Serializable data class TransactionsRoute(val accountId: Long = -1, val categoryId: Long = -1, val month: String = "")
+@Serializable data class TransactionsRoute(val accountId: Long = -1, val categoryId: Long = -1, val month: String = "", val query: String = "")
 @Serializable object InvestmentsRoute
 @Serializable object SettingsRoute
 @Serializable data class TransactionRoute(val id: Long)

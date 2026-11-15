@@ -17,6 +17,16 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.automirrored.filled.TrendingDown
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
+import androidx.compose.material.icons.filled.AccountBalance
+import androidx.compose.material.icons.filled.Autorenew
+import androidx.compose.material.icons.filled.Percent
+import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.Savings
+import androidx.compose.material.icons.filled.ShoppingBag
+import androidx.compose.material.icons.filled.Spa
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Warning
@@ -68,6 +78,7 @@ import ca.emarshall.finance.core.money.Money
 import ca.emarshall.finance.data.CategoryRepository
 import ca.emarshall.finance.data.GoalRepository
 import ca.emarshall.finance.data.InsightsRepository
+import ca.emarshall.finance.data.toFacts
 import ca.emarshall.finance.data.StatementsRepository
 import ca.emarshall.finance.data.db.GoalEntity
 import ca.emarshall.finance.data.ruleKey
@@ -131,7 +142,14 @@ class InsightsViewModel @Inject constructor(
     goals: GoalRepository,
     statements: StatementsRepository,
     private val claude: AiRepository,
+    transactions: ca.emarshall.finance.data.TransactionRepository,
 ) : ViewModel() {
+    /** The newest month on file in a handful of numbers. */
+    val highlights = kotlinx.coroutines.flow.combine(transactions.rows, statements.latestUnlocked) { rows, month ->
+        if (month == null) return@combine null
+        val facts = rows.toFacts()
+        month to ca.emarshall.finance.core.insights.Highlights.forMonth(facts, month, transactions.recurring(rows, java.time.LocalDate.now()))
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     val visible = insights.visible.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     val goals = goals.goals.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val missing = statements.byAccount.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -171,6 +189,7 @@ fun InsightsScreen(nav: NavController, vm: InsightsViewModel = hiltViewModel()) 
     val aiLabel = vm.aiConfig.collectAsStateWithLifecycle().value?.let { "${it.label.substringBefore(" (")} · ${it.model}" } ?: ""
     val busy by vm.busy.collectAsStateWithLifecycle()
     val message by vm.message.collectAsStateWithLifecycle()
+    val highlights by vm.highlights.collectAsStateWithLifecycle()
     val p = Fin.palette
 
     LargeTitleScreen("Insights") {
@@ -197,6 +216,13 @@ fun InsightsScreen(nav: NavController, vm: InsightsViewModel = hiltViewModel()) 
             }
         }
         message?.let { m -> item { Notice(m) } }
+
+        // ---- The month in a few numbers (on-device) ----
+        highlights?.takeIf { it.second.isNotEmpty() }?.let { (month, list) ->
+            item { SectionHeader("${month.month.name.lowercase().replaceFirstChar { it.uppercase() }} at a glance") }
+            item { HighlightStrip(list, nav) }
+        }
+
         checkIn?.takeIf { claudeOn }?.let { (c, cost) ->
             item {
                 FinCard {
@@ -634,6 +660,43 @@ fun ClaudeChatScreen(nav: NavController, vm: ClaudeChatViewModel = hiltViewModel
             FinTextField(input, { input = it }, "Ask about your money", Modifier.weight(1f), singleLine = false)
             IconButton(onClick = { vm.send(input); input = "" }, enabled = !streaming && input.isNotBlank()) {
                 Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send", tint = if (!streaming && input.isNotBlank()) p.accent else p.tertiaryLabel)
+            }
+        }
+    }
+}
+
+/** A row of cards to swipe through, one number each. */
+@Composable
+private fun HighlightStrip(list: List<ca.emarshall.finance.core.insights.Highlight>, nav: NavController) {
+    val p = Fin.palette
+    androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        items(list.size) { i ->
+            val h = list[i]
+            val (icon, color) = when (h.kind) {
+                ca.emarshall.finance.core.insights.HighlightKind.SAVED -> Icons.Default.Savings to p.positive
+                ca.emarshall.finance.core.insights.HighlightKind.OVERSPENT -> Icons.Default.Warning to p.negative
+                ca.emarshall.finance.core.insights.HighlightKind.CATEGORY_UP -> Icons.AutoMirrored.Filled.TrendingUp to p.warning
+                ca.emarshall.finance.core.insights.HighlightKind.CATEGORY_DOWN -> Icons.AutoMirrored.Filled.TrendingDown to p.positive
+                ca.emarshall.finance.core.insights.HighlightKind.BIGGEST_PURCHASE -> Icons.Default.ShoppingBag to p.chart[0]
+                ca.emarshall.finance.core.insights.HighlightKind.MOST_VISITED -> Icons.Default.Place to p.chart[3]
+                ca.emarshall.finance.core.insights.HighlightKind.BILLS -> Icons.Default.Autorenew to p.chart[5]
+                ca.emarshall.finance.core.insights.HighlightKind.PUT_AWAY -> Icons.Default.AccountBalance to p.chart[2]
+                ca.emarshall.finance.core.insights.HighlightKind.QUIET_DAYS -> Icons.Default.Spa to p.chart[4]
+                ca.emarshall.finance.core.insights.HighlightKind.FEES -> Icons.Default.Percent to p.negative
+            }
+            val onClick: (() -> Unit)? = when {
+                h.transactionId != null -> ({ nav.navigate(ca.emarshall.finance.ui.TransactionRoute(h.transactionId!!)) })
+                h.kind == ca.emarshall.finance.core.insights.HighlightKind.BILLS -> ({ nav.navigate(ca.emarshall.finance.ui.BillsRoute) })
+                else -> null
+            }
+            Column(
+                Modifier.width(172.dp).height(150.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(20.dp)).background(p.card)
+                    .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier).padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                ca.emarshall.finance.ui.design.IconTile(icon, color, size = 30.dp)
+                Text(h.value, style = MaterialTheme.typography.headlineSmall, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, color = color, maxLines = 1)
+                Text(h.caption, style = MaterialTheme.typography.bodySmall, color = p.secondaryLabel, maxLines = 3, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             }
         }
     }
