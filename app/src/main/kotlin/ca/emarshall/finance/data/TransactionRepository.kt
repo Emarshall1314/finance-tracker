@@ -74,8 +74,11 @@ class TransactionRepository @Inject constructor(
     val latestDates = dao.observeLatestDates()
     val count = dao.observeCount()
 
-    fun search(accountId: Long?, categoryId: Long?, from: LocalDate, to: LocalDate, q: String) =
-        dao.search(accountId, categoryId, from, to, q.trim())
+    /** Searches names, bank descriptions and notes; a number also finds amounts ("50" finds $50.00 to $50.99, "50.25" exactly that). */
+    fun search(accountId: Long?, categoryId: Long?, from: LocalDate, to: LocalDate, q: String): Flow<List<TxRow>> {
+        val range = ca.emarshall.finance.core.money.AmountSearch.range(q)
+        return dao.search(accountId, categoryId, from, to, q.trim(), range?.first ?: -1, range?.second ?: -1)
+    }
 
     fun row(id: Long) = dao.observeRow(id)
 

@@ -102,11 +102,12 @@ interface TransactionDao {
         WHERE (:accountId IS NULL OR t.accountId = :accountId)
           AND (:categoryId IS NULL OR t.categoryId = :categoryId)
           AND t.date BETWEEN :from AND :to
-          AND (:q = '' OR t.merchant LIKE '%' || :q || '%' OR t.rawDescription LIKE '%' || :q || '%' OR t.notes LIKE '%' || :q || '%')
+          AND (:q = '' OR t.merchant LIKE '%' || :q || '%' OR t.rawDescription LIKE '%' || :q || '%' OR t.notes LIKE '%' || :q || '%'
+               OR (:amountFrom >= 0 AND ABS(t.amountCents) BETWEEN :amountFrom AND :amountTo))
         ORDER BY t.date DESC, t.id DESC
         LIMIT 20000""",
     )
-    fun search(accountId: Long?, categoryId: Long?, from: LocalDate, to: LocalDate, q: String): Flow<List<TxRow>>
+    fun search(accountId: Long?, categoryId: Long?, from: LocalDate, to: LocalDate, q: String, amountFrom: Long, amountTo: Long): Flow<List<TxRow>>
 
     @Query("$TX_SELECT WHERE t.id = :id")
     fun observeRow(id: Long): Flow<TxRow?>

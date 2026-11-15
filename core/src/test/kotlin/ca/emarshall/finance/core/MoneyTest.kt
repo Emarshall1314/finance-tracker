@@ -55,4 +55,17 @@ class MoneyTest {
         assertEquals("$12.00 USD", Money.format(1200, "USD", showCurrency = true))
         assertEquals("$1,235", Money.formatWhole(123450))
     }
+
+    @Test fun amountSearchRanges() {
+        val r = ca.emarshall.finance.core.money.AmountSearch
+        org.junit.Assert.assertEquals(5000L to 5099L, r.range("50"))
+        org.junit.Assert.assertEquals(5020L to 5029L, r.range("50.2"))
+        org.junit.Assert.assertEquals(5025L to 5025L, r.range(" $50.25 "))
+        org.junit.Assert.assertEquals(180000L to 180099L, r.range("1,800"))
+        org.junit.Assert.assertEquals(5000L to 5099L, r.range("50."))
+        org.junit.Assert.assertNull(r.range("costco"))
+        org.junit.Assert.assertNull(r.range("7-eleven"))
+        org.junit.Assert.assertNull(r.range("-50"))
+        org.junit.Assert.assertNull(r.range(""))
+    }
 }

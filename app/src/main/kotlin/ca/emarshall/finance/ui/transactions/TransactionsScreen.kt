@@ -159,7 +159,7 @@ fun TransactionsScreen(nav: NavController, route: TransactionsRoute, vm: Transac
                 value = f.query, onValueChange = { q -> vm.update { it.copy(query = q) } },
                 modifier = Modifier.fillMaxWidth(), singleLine = true,
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = p.secondaryLabel) },
-                placeholder = { Text("Search", color = p.secondaryLabel) },
+                placeholder = { Text("Search a name, note or amount", color = p.secondaryLabel) },
                 shape = RoundedCornerShape(12.dp),
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = p.cardSecondary, unfocusedContainerColor = p.cardSecondary,
