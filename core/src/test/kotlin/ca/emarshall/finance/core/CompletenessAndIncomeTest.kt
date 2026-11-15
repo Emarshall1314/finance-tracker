@@ -191,3 +191,24 @@ class DailyBalanceTest {
         assertEquals(listOf(LocalDate.of(2026, 11, 1) to 1000L, LocalDate.of(2026, 11, 2) to 1500L, LocalDate.of(2026, 11, 3) to 1600L), series)
     }
 }
+
+class TrendsTest {
+    private var id = 0L
+    private fun f(month: Int, cents: Long, key: String) =
+        TxFact(++id, 1, LocalDate.of(2026, month, 5), cents, "CAD", key, key, CategoryKind.EXPENSE, "M", false, AccountKind.BANK)
+
+    @Test fun comparesRecentMonthsWithEarlierOnes() {
+        // Data starts in May. Dining: 100 a month, then 200 a month for Aug-Oct. Fuel: steady 50.
+        val facts = (5..10).flatMap { m -> listOf(f(m, if (m >= 8) -20_000 else -10_000, "dining"), f(m, -5_000, "fuel")) }
+        val t = ca.emarshall.finance.core.insights.Trends.byCategory(facts, YearMonth.of(2026, 10))
+        assertEquals(listOf("dining", "fuel"), t.map { it.categoryKey }) // biggest mover first
+        assertEquals(20_000L, t[0].recentCents)
+        assertEquals(10_000L, t[0].earlierCents) // May-Jul only: the empty months before May don't count
+        assertEquals(10_000L, t[0].changeCents)
+        assertEquals(0L, t[1].changeCents)
+        assertEquals(12, t[0].monthly.size)
+        assertEquals(0L, t[0].monthly.first())
+        // With too little history there is nothing to compare against.
+        assertNull(ca.emarshall.finance.core.insights.Trends.byCategory(facts, YearMonth.of(2026, 8)).first().earlierCents)
+    }
+}

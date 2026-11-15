@@ -528,3 +528,26 @@ fun MonthHeatmap(
         }
     }
 }
+
+/** A row of small bars with no axes, for a trend at a glance. The last [emphasize] bars are drawn solid, the rest faint. */
+@Composable
+fun MiniBars(values: List<Long>, color: Color, modifier: Modifier = Modifier, emphasize: Int = 3, height: Dp = 40.dp) {
+    if (values.isEmpty()) return
+    val track = Fin.palette.cardSecondary
+    val reveal = rememberReveal(values, 500)
+    Canvas(modifier.height(height)) {
+        val max = values.max().coerceAtLeast(1).toFloat()
+        val slot = size.width / values.size
+        val w = slot * 0.66f
+        val radius = CornerRadius(w / 3)
+        values.forEachIndexed { i, v ->
+            val h = (size.height * v / max * reveal).coerceAtLeast(if (v > 0) 2.dp.toPx() else 0f)
+            val x = slot * i + (slot - w) / 2
+            if (h <= 0f) {
+                drawRoundRect(track, Offset(x, size.height - 2.dp.toPx()), Size(w, 2.dp.toPx()), radius)
+            } else {
+                drawRoundRect(color.copy(alpha = if (i >= values.size - emphasize) 1f else 0.38f), Offset(x, size.height - h), Size(w, h), radius)
+            }
+        }
+    }
+}

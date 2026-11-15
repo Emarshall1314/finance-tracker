@@ -16,6 +16,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Description
@@ -167,6 +168,12 @@ fun OverviewScreen(nav: NavController, vm: OverviewViewModel = hiltViewModel()) 
                 }
             }
 
+            if (s.categories.isNotEmpty()) item {
+                Group {
+                    GroupRow("Trends", subtitle = "Each category over the last 12 months", icon = Icons.AutoMirrored.Filled.TrendingUp, iconColor = Fin.palette.chart[2],
+                        showChevron = true, divider = false, onClick = { nav.navigate(ca.emarshall.finance.ui.TrendsRoute) })
+                }
+            }
             s.flow?.let { flow ->
                 item { SectionHeader("Where it went") }
                 item { FlowCard(s, flow, nav) }
