@@ -10,6 +10,8 @@ import ca.emarshall.finance.core.csv.CsvProfileInference
 import ca.emarshall.finance.core.csv.CsvReader
 import ca.emarshall.finance.core.csv.CsvStatementParser
 import ca.emarshall.finance.core.csv.InferredProfile
+import ca.emarshall.finance.core.importing.AccountMatcher
+import ca.emarshall.finance.core.importing.AccountRef
 import ca.emarshall.finance.core.importing.Dedup
 import ca.emarshall.finance.core.importing.DedupResult
 import ca.emarshall.finance.core.importing.FormatDetector
@@ -69,6 +71,8 @@ data class ImportPreview(
 }
 
 data class ImportResult(val batchId: Long, val accountId: Long, val newCount: Int, val duplicateCount: Int, val transfersMatched: Int)
+
+data class RepairResult(val moved: Int, val unreadable: Int)
 
 class ImportException(message: String) : IOException(message)
 
@@ -140,11 +144,19 @@ class ImportRepository @Inject constructor(
     }
 
     /** Best guess at which of my accounts a file belongs to. */
-    fun suggestAccount(hint: AccountHint, all: List<AccountEntity>): Long? {
-        val sameBank = all.filter { hint.institution == null || it.institutionEnum == hint.institution }
-        return sameBank.firstOrNull { hint.last4 != null && it.last4 == hint.last4 }?.id
-            ?: sameBank.filter { hint.accountType != null && it.typeEnum == hint.accountType }.singleOrNull()?.id
-            ?: sameBank.singleOrNull()?.id
+    /** The account this file belongs to, or null when none fits (never one of a different kind). */
+    fun suggestAccount(hint: AccountHint, all: List<AccountEntity>): Long? = AccountMatcher.match(hint, all.map { it.ref() })
+
+    private fun AccountEntity.ref() = AccountRef(id, institutionEnum, typeEnum, last4)
+
+    /** Why this file shouldn't go into [account], for the review screen; null when it fits. */
+    fun mismatch(hint: AccountHint, account: AccountEntity): String? {
+        if (!AccountMatcher.misfiled(hint, account.ref())) return null
+        val what = listOfNotNull(hint.institution?.displayName, hint.accountType?.displayName?.lowercase()).joinToString(" ")
+            .ifBlank { "different account" }
+        val ending = hint.last4?.let { " ending $it" } ?: ""
+        return "This looks like a $what statement$ending, but ${account.nickname} is a ${account.typeEnum.displayName.lowercase()} account" +
+            (account.last4?.let { " ending $it" } ?: "") + "."
     }
 
     /** CSV profile to use for this account: the saved one, else inferred with the account's sign convention. */
@@ -171,7 +183,8 @@ class ImportRepository @Inject constructor(
             else -> detected.statement!!
         }
         val plan = Dedup.plan(account.id, statement.transactions, txDao.fingerprints(account.id).toHashSet(), txDao.fitIds(account.id).toHashSet())
-        ImportPreview(detected, account, statement, plan, profile)
+        val checked = mismatch(detected.hint, account)?.let { statement.copy(warnings = listOf(it) + statement.warnings) } ?: statement
+        ImportPreview(detected, account, checked, plan, profile)
     }
 
     /**
@@ -213,6 +226,7 @@ class ImportRepository @Inject constructor(
                 },
             )
             if (p.profile != null) importDao.saveProfile(CsvProfileEntity(p.account.id, p.profile.encode(), System.currentTimeMillis()))
+            learnLast4(p.account, p.detected.hint)
             learnClosingDay(p.account.id)
             batchId to newCount
         }
@@ -249,6 +263,13 @@ class ImportRepository @Inject constructor(
      * Sets the account's statement closing day from the periods printed on its statements, the first time
      * it can be worked out. Reminders and missing-statement checks use it.
      */
+    private suspend fun learnLast4(account: AccountEntity, hint: AccountHint) {
+        val digits = hint.last4 ?: return
+        val current = accounts.get(account.id) ?: return
+        if (current.last4 != null || AccountMatcher.misfiled(hint, current.ref())) return
+        accounts.update(current.copy(last4 = digits))
+    }
+
     private suspend fun learnClosingDay(accountId: Long) {
         val account = accounts.get(accountId) ?: return
         if (account.closingDay != null) return
@@ -323,14 +344,50 @@ class ImportRepository @Inject constructor(
         if (d.file.format == FileFormat.CSV) return null
         val inst = d.hint.institution ?: return null
         val type = d.hint.accountType ?: return null
-        if (all.any { it.institutionEnum == inst && it.typeEnum == type }) return null // ambiguous: let the user pick
+        // Only when nothing fits: an existing account of this kind that couldn't be told apart means the user picks.
+        if (all.any { AccountMatcher.compatible(d.hint, it.ref()) && it.typeEnum == type }) return null
         val name = when {
             inst == Institution.CANADIAN_TIRE && type == AccountType.CREDIT_CARD -> "Triangle Mastercard"
             inst == Institution.SCOTIABANK && type == AccountType.CREDIT_CARD -> "Scotia Visa"
             inst == Institution.SCOTIABANK -> "Scotiabank ${type.displayName}"
             else -> "${inst.displayName} ${type.displayName}"
         }
-        return accounts.get(accounts.add(name, inst, type, d.hint.last4, d.hint.currency ?: "CAD"))
+        // A second card of the same kind gets its digits in the name so the two can be told apart.
+        val unique = if (all.any { it.nickname == name }) d.hint.last4?.let { "$name $it" } ?: "$name 2" else name
+        return accounts.get(accounts.add(unique, inst, type, d.hint.last4, d.hint.currency ?: "CAD"))
+    }
+
+    /**
+     * Finds statements filed in the wrong account (before account matching respected account types, a Scotia
+     * Visa statement could land in Scotiabank chequing) and moves each to the right account, creating it if
+     * needed. Works from the encrypted copies in the statement library. Returns how many were moved.
+     */
+    suspend fun repairMisfiledImports(): RepairResult {
+        var moved = 0
+        var unreadable = 0
+        val touched = HashSet<Long>()
+        for (b in importDao.allBatches()) {
+            if (b.format == FileFormat.CSV.name || !b.hasFile) continue
+            val account = accounts.get(b.accountId) ?: continue
+            val bytes = runCatching { files.read(b.id) }.getOrNull() ?: run { unreadable++; continue }
+            val file = LoadedFile(b.fileName, bytes, b.sha256, FileFormat.valueOf(b.format))
+            val detected = runCatching { detect(file) }.getOrNull() ?: run { unreadable++; continue }
+            if (!AccountMatcher.misfiled(detected.hint, account.ref())) continue
+            undo(b.id)
+            touched += account.id
+            val all = accounts.all()
+            val target = suggestAccount(detected.hint, all)?.let { id -> all.firstOrNull { it.id == id } }
+                ?: autoCreateAccount(detected, all)
+                ?: continue // can't place it: left out, the user can import it again from the bank's file
+            commit(preview(detected, target, null), deferPostProcessing = true)
+            moved++
+        }
+        if (touched.isNotEmpty()) {
+            // The wrong statements may have taught these accounts the wrong closing day; learn it again.
+            for (id in touched) accounts.get(id)?.let { accounts.update(it.copy(closingDay = null)); learnClosingDay(id) }
+            finishBatch()
+        }
+        return RepairResult(moved, unreadable)
     }
 
     companion object {

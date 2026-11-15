@@ -4,6 +4,8 @@ import android.app.Application
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import ca.emarshall.finance.data.CategoryRepository
+import ca.emarshall.finance.data.ImportRepository
+import ca.emarshall.finance.data.SettingsRepository
 import ca.emarshall.finance.data.QuestradeRepository
 import ca.emarshall.finance.notify.Notifier
 import ca.emarshall.finance.security.AppLock
@@ -25,6 +27,8 @@ class FinanceApp : Application(), Configuration.Provider {
     @Inject lateinit var categories: dagger.Lazy<CategoryRepository>
     @Inject lateinit var reminders: dagger.Lazy<ReminderScheduler>
     @Inject lateinit var questrade: dagger.Lazy<QuestradeRepository>
+    @Inject lateinit var imports: dagger.Lazy<ImportRepository>
+    @Inject lateinit var settings: dagger.Lazy<SettingsRepository>
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -41,6 +45,11 @@ class FinanceApp : Application(), Configuration.Provider {
                 categories.get().ensureSeeded()
                 reminders.get().rescheduleAll()
                 if (questrade.get().isConnected()) QuestradeSyncWorker.schedule(this@FinanceApp)
+                // Once: move statements that older versions filed in the wrong account (Visa into chequing).
+                if (settings.get().repairVersion() < 1) {
+                    imports.get().repairMisfiledImports()
+                    settings.get().setRepairVersion(1)
+                }
             } catch (e: Exception) {
                 AppLog.w("FinanceApp", "Startup task failed: ${e.javaClass.simpleName}")
             }

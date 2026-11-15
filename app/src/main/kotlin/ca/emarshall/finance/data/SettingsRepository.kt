@@ -101,6 +101,10 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val con
         it[AI_KIND] = kind; it[AI_LABEL] = label; it[AI_BASE_URL] = baseUrl; it[AI_MODEL] = model
     }
 
+    /** Version of the one-time data repairs already run (see FinanceApp). */
+    suspend fun repairVersion(): Int = ds.data.first()[REPAIR_VERSION] ?: 0
+    suspend fun setRepairVersion(v: Int) = ds.edit { it[REPAIR_VERSION] = v }
+
     suspend fun clearAll() = ds.edit { it.clear() }
 
     private companion object {
@@ -120,5 +124,6 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val con
         val AI_LABEL = stringPreferencesKey("ai_label")
         val AI_BASE_URL = stringPreferencesKey("ai_base_url")
         val AI_MODEL = stringPreferencesKey("ai_model")
+        val REPAIR_VERSION = intPreferencesKey("repair_version")
     }
 }
