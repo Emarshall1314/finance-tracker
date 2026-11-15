@@ -1,4 +1,4 @@
-package ca.emarshall.finance.claude
+package ca.emarshall.finance.ai
 
 import ca.emarshall.finance.core.goals.GoalType
 import ca.emarshall.finance.data.CategoryRepository
@@ -19,11 +19,11 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Everything the Claude coach needs, behind the user's opt-in. Nothing is sent until the user taps a button
+ * Everything the AI coach needs, behind the user's opt-in. Nothing is sent until the user taps a button
  * on a Claude screen; there is no background use. Chats live in memory only and vanish when the app closes.
  */
 @Singleton
-class ClaudeRepository @Inject constructor(
+class AiRepository @Inject constructor(
     private val secrets: SecretStore,
     private val settings: SettingsRepository,
     private val export: ExportRepository,
@@ -33,27 +33,43 @@ class ClaudeRepository @Inject constructor(
     private val categories: CategoryRepository,
 ) {
     val enabled: Flow<Boolean> = settings.settings.map { it.claudeEnabled }
-    val chat = MutableStateFlow<List<ChatTurn>>(emptyList())
-    val lastCheckIn = MutableStateFlow<Pair<CheckIn, CostEstimate>?>(null)
+    val config: Flow<AiConfig> = settings.settings.map { s ->
+        AiConfig(runCatching { AiKind.valueOf(s.aiKind) }.getOrDefault(AiKind.ANTHROPIC), s.aiLabel, s.aiBaseUrl, s.aiModel)
+    }
+    val chat = MutableStateFlow<List<AiTurn>>(emptyList())
+    val lastCheckIn = MutableStateFlow<Pair<CheckIn, AiUsage>?>(null)
 
-    suspend fun hasKey() = !secrets.anthropicKey().isNullOrBlank()
+    suspend fun hasKey() = !secrets.aiKey().isNullOrBlank()
 
-    suspend fun enable(apiKey: String) {
-        secrets.setAnthropicKey(apiKey)
+    /** Saves the chosen provider and key and turns the coach on. Only HTTPS endpoints are accepted. */
+    suspend fun enable(config: AiConfig, apiKey: String) {
+        if (config.kind == AiKind.OPENAI_COMPATIBLE) {
+            val uri = runCatching { java.net.URI(config.baseUrl) }.getOrNull()
+            if (uri?.scheme != "https" || uri.host.isNullOrBlank()) throw AiException("The address must start with https://")
+            if (config.model.isBlank()) throw AiException("Enter the model name from ${config.label}.")
+        }
+        settings.setAi(config.kind.name, config.label, config.baseUrl.trim(), config.model.trim())
+        secrets.setAiKey(apiKey)
         settings.setClaudeEnabled(true)
+        chat.value = emptyList()
+        lastCheckIn.value = null
     }
 
     suspend fun disable() {
-        secrets.setAnthropicKey(null)
+        secrets.setAiKey(null)
         settings.setClaudeEnabled(false)
         chat.value = emptyList()
         lastCheckIn.value = null
     }
 
-    private suspend fun coach(): ClaudeCoach {
-        if (!settings.current().claudeEnabled) throw ClaudeException("Turn on the Claude coach in Settings first.")
-        val key = secrets.anthropicKey() ?: throw ClaudeException("Add your Anthropic API key in Settings → Claude coach.")
-        return ClaudeCoach(key)
+    private suspend fun coach(): AiProvider {
+        if (!settings.current().claudeEnabled) throw AiException("Turn on the AI coach in Settings first.")
+        val key = secrets.aiKey() ?: throw AiException("Add your API key in Settings → AI coach.")
+        val c = config.first()
+        return when (c.kind) {
+            AiKind.ANTHROPIC -> AnthropicProvider(key, c)
+            AiKind.OPENAI_COMPATIBLE -> OpenAiCompatibleProvider(key, c)
+        }
     }
 
     /**
@@ -84,11 +100,11 @@ class ClaudeRepository @Inject constructor(
         append(export.summaryMarkdown(months))
     }
 
-    suspend fun runCheckIn(): Pair<CheckIn, CostEstimate> = coach().checkIn(context()).also { lastCheckIn.value = it }
+    suspend fun runCheckIn(): Pair<CheckIn, AiUsage> = coach().checkIn(context()).also { lastCheckIn.value = it }
 
-    suspend fun ask(question: String): Flow<ChatEvent> = coach().chat(context(), chat.value, question)
+    suspend fun ask(question: String): Flow<AiEvent> = coach().chat(context(), chat.value, question)
 
-    fun appendTurn(turn: ChatTurn) {
+    fun appendTurn(turn: AiTurn) {
         chat.value = chat.value + turn
     }
 
@@ -110,7 +126,7 @@ class ClaudeRepository @Inject constructor(
                 categoryKey = if (type == GoalType.SPEND_LIMIT) validCategory else null,
                 start = if (type == GoalType.SAVE_AMOUNT) today.withDayOfMonth(1) else today,
                 deadline = s.months?.takeIf { type == GoalType.SAVE_AMOUNT && it > 0 }?.let { today.plusMonths(it.toLong()) },
-                note = "Suggested by Claude: ${s.why}".take(500),
+                note = "Suggested by your AI coach: ${s.why}".take(500),
             ),
         )
     }

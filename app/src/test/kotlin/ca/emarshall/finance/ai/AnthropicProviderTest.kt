@@ -1,4 +1,4 @@
-package ca.emarshall.finance.claude
+package ca.emarshall.finance.ai
 
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
@@ -18,14 +18,14 @@ import org.junit.Test
 import java.math.BigDecimal
 
 /** The coach against a local MockWebServer: request shape and response handling, no real API calls. */
-class ClaudeCoachTest {
+class AnthropicProviderTest {
     private lateinit var server: MockWebServer
     private val context = "Today: 2026-11-14\n## Monthly income, spending and net\n| Oct 2026 | \$4,000.00 | \$3,000.00 |"
 
     @Before fun setUp() { server = MockWebServer(); server.start() }
     @After fun tearDown() = server.shutdown()
 
-    private fun coach() = ClaudeCoach("sk-ant-test-key", server.url("/").toString().trimEnd('/'))
+    private fun coach() = AnthropicProvider("sk-ant-test-key", AiConfig(AiKind.ANTHROPIC, "Claude", "", "claude-opus-5-5"), server.url("/").toString().trimEnd('/'))
 
     private fun message(text: String, stop: String = "end_turn") = """
         {"id":"msg_1","type":"message","role":"assistant","model":"claude-opus-5-5",
@@ -40,14 +40,14 @@ class ClaudeCoachTest {
             "target_dollars":300,"target_percent":null,"category":"dining","months":null}]}"""
         server.enqueue(MockResponse().setHeader("Content-Type", "application/json").setBody(message(result)))
 
-        val (checkIn, cost) = coach().checkIn(context)
+        val (checkIn, usage) = coach().checkIn(context)
 
         assertEquals("Solid month.", checkIn.summary)
         assertEquals(listOf("Pay the card in full"), checkIn.actions)
         assertEquals(300L, checkIn.suggestedGoals.single().targetDollars)
         assertEquals("dining", checkIn.suggestedGoals.single().category)
         // 1000×4 + 3000×5 + 200×20 = 23,000 micro-dollars = $0.023
-        assertEquals(BigDecimal("0.023000"), cost.usd)
+        assertEquals(BigDecimal("0.023000"), usage.usd)
 
         val req = server.takeRequest()
         assertEquals("/v1/messages", req.path)
@@ -71,7 +71,7 @@ class ClaudeCoachTest {
         server.enqueue(MockResponse().setHeader("Content-Type", "application/json").setBody(message("", stop = "refusal")))
         try {
             coach().checkIn(context); fail()
-        } catch (e: ClaudeException) {
+        } catch (e: AiException) {
             assertTrue(e.message!!.contains("declined"))
         }
     }
@@ -83,7 +83,7 @@ class ClaudeCoachTest {
         )
         try {
             coach().checkIn(context); fail()
-        } catch (e: ClaudeException) {
+        } catch (e: AiException) {
             assertTrue(e.message!!.contains("API key was rejected"))
         }
     }
@@ -101,9 +101,9 @@ class ClaudeCoachTest {
         server.enqueue(MockResponse().setHeader("Content-Type", "text/event-stream").setBody(sse))
 
         val events = coach().chat(context, emptyList(), "Where should my next \$5,000 go?").toList()
-        val text = events.filterIsInstance<ChatEvent.Text>().joinToString("") { it.delta }
+        val text = events.filterIsInstance<AiEvent.Text>().joinToString("") { it.delta }
         assertEquals("Put it in your TFSA.", text)
-        val done = events.last() as ChatEvent.Done
+        val done = events.last() as AiEvent.Done
         assertEquals("Where should my next \$5,000 go?", done.turn.question)
 
         val body = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject

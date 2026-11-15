@@ -37,6 +37,11 @@ data class AppSettings(
     val notifiedInsights: Set<String> = emptySet(),
     /** The opt-in Claude coach: off until the user enables it and accepts what's shared. */
     val claudeEnabled: Boolean = false,
+    /** Which AI the coach uses (see ai/AiPresets). */
+    val aiKind: String = "ANTHROPIC",
+    val aiLabel: String = "Claude (Anthropic)",
+    val aiBaseUrl: String = "https://api.anthropic.com",
+    val aiModel: String = "claude-opus-5-5",
 )
 
 /** Non-secret preferences. Secrets live in [ca.emarshall.finance.security.SecretStore]. */
@@ -58,6 +63,10 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val con
             dismissedInsights = p[DISMISSED_INSIGHTS] ?: emptySet(),
             notifiedInsights = p[NOTIFIED_INSIGHTS] ?: emptySet(),
             claudeEnabled = p[CLAUDE_ENABLED] ?: false,
+            aiKind = p[AI_KIND] ?: "ANTHROPIC",
+            aiLabel = p[AI_LABEL] ?: "Claude (Anthropic)",
+            aiBaseUrl = p[AI_BASE_URL] ?: "https://api.anthropic.com",
+            aiModel = p[AI_MODEL] ?: "claude-opus-5-5",
         )
     }
 
@@ -88,6 +97,10 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val con
 
     suspend fun setClaudeEnabled(on: Boolean) = ds.edit { it[CLAUDE_ENABLED] = on }
 
+    suspend fun setAi(kind: String, label: String, baseUrl: String, model: String) = ds.edit {
+        it[AI_KIND] = kind; it[AI_LABEL] = label; it[AI_BASE_URL] = baseUrl; it[AI_MODEL] = model
+    }
+
     suspend fun clearAll() = ds.edit { it.clear() }
 
     private companion object {
@@ -103,5 +116,9 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val con
         val DISMISSED_INSIGHTS = stringSetPreferencesKey("dismissed_insights")
         val NOTIFIED_INSIGHTS = stringSetPreferencesKey("notified_insights")
         val CLAUDE_ENABLED = booleanPreferencesKey("claude_enabled")
+        val AI_KIND = stringPreferencesKey("ai_kind")
+        val AI_LABEL = stringPreferencesKey("ai_label")
+        val AI_BASE_URL = stringPreferencesKey("ai_base_url")
+        val AI_MODEL = stringPreferencesKey("ai_model")
     }
 }

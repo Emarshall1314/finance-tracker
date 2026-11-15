@@ -89,17 +89,17 @@ class SecretStore @Inject constructor(@ApplicationContext private val context: C
 
     fun openBytes(label: String, cipher: ByteArray): ByteArray = aead.decrypt(cipher, label.toByteArray())
 
-    /** The user's own Anthropic API key for the opt-in Claude coach. Never logged or exported. */
-    suspend fun anthropicKey(): String? = decrypt(K_ANTHROPIC.name, store.data.first()[K_ANTHROPIC])
+    /** The user's own API key for the opt-in AI coach (whichever provider they chose). Never logged or exported. */
+    suspend fun aiKey(): String? = decrypt(K_ANTHROPIC.name, store.data.first()[K_ANTHROPIC])
 
-    suspend fun setAnthropicKey(key: String?) {
+    suspend fun setAiKey(key: String?) {
         store.edit { if (key.isNullOrBlank()) it.remove(K_ANTHROPIC) else it[K_ANTHROPIC] = encrypt(K_ANTHROPIC.name, key.trim()) }
     }
 
     /** Removes every secret except the database passphrase (used by "Delete all data"). */
     suspend fun clearAll() {
         clear()
-        setAnthropicKey(null)
+        setAiKey(null)
     }
 
     override suspend fun clear() {

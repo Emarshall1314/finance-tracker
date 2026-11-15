@@ -53,11 +53,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.navigation.NavController
 import androidx.navigation.toRoute
-import ca.emarshall.finance.claude.ChatEvent
-import ca.emarshall.finance.claude.ClaudeCoach
-import ca.emarshall.finance.claude.ClaudeException
-import ca.emarshall.finance.claude.ClaudeRepository
-import ca.emarshall.finance.claude.SuggestedGoal
+import ca.emarshall.finance.ai.AiConfig
+import ca.emarshall.finance.ai.AiEvent
+import ca.emarshall.finance.ai.AiException
+import ca.emarshall.finance.ai.AiKind
+import ca.emarshall.finance.ai.AiPresets
+import ca.emarshall.finance.ai.AiRepository
+import ca.emarshall.finance.ai.SuggestedGoal
 import ca.emarshall.finance.core.goals.GoalStatus
 import ca.emarshall.finance.core.goals.GoalType
 import ca.emarshall.finance.core.insights.Insight
@@ -91,12 +93,13 @@ class InsightsViewModel @Inject constructor(
     private val insights: InsightsRepository,
     goals: GoalRepository,
     statements: StatementsRepository,
-    private val claude: ClaudeRepository,
+    private val claude: AiRepository,
 ) : ViewModel() {
     val visible = insights.visible.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     val goals = goals.goals.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val missing = statements.byAccount.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val claudeEnabled = claude.enabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+    val aiConfig = claude.config.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     val checkIn = claude.lastCheckIn
     val busy = MutableStateFlow(false)
     val message = MutableStateFlow<String?>(null)
@@ -108,7 +111,7 @@ class InsightsViewModel @Inject constructor(
         message.value = null
         try {
             claude.runCheckIn()
-        } catch (e: ClaudeException) {
+        } catch (e: AiException) {
             message.value = e.message
         } finally {
             busy.value = false
@@ -129,6 +132,7 @@ fun InsightsScreen(nav: NavController, vm: InsightsViewModel = hiltViewModel()) 
     val statements by vm.missing.collectAsStateWithLifecycle()
     val claudeOn by vm.claudeEnabled.collectAsStateWithLifecycle()
     val checkIn by vm.checkIn.collectAsStateWithLifecycle()
+    val aiLabel = vm.aiConfig.collectAsStateWithLifecycle().value?.let { "${it.label.substringBefore(" (")} · ${it.model}" } ?: ""
     val busy by vm.busy.collectAsStateWithLifecycle()
     val message by vm.message.collectAsStateWithLifecycle()
 
@@ -161,7 +165,7 @@ fun InsightsScreen(nav: NavController, vm: InsightsViewModel = hiltViewModel()) 
 
             // ---- Goals ----
             SectionCard("Goals") {
-                if (goals.isEmpty()) Text("No goals yet. Add one, or ask Claude to suggest some.")
+                if (goals.isEmpty()) Text("No goals yet. Add one, or ask your AI coach to suggest some.")
                 goals.forEach { g ->
                     Column(Modifier.fillMaxWidth().clickable { nav.navigate(GoalEditRoute(g.entity.id)) }.padding(vertical = 6.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -180,18 +184,18 @@ fun InsightsScreen(nav: NavController, vm: InsightsViewModel = hiltViewModel()) 
                 OutlinedButton(onClick = { nav.navigate(GoalEditRoute()) }) { Text("Add a goal") }
             }
 
-            // ---- Claude coach (opt-in) ----
-            SectionCard("Claude coach") {
+            // ---- AI coach (opt-in) ----
+            SectionCard("AI coach") {
                 if (!claudeOn) {
-                    Text("Get feedback on your month, goal suggestions, and answers to questions about your money from Claude. Off until you turn it on.")
-                    Button(onClick = { nav.navigate(ClaudeSetupRoute) }) { Text("Set up Claude coach") }
+                    Text("Get feedback on your month, goal suggestions, and answers to questions about your money from the AI of your choice. Off until you turn it on.")
+                    Button(onClick = { nav.navigate(ClaudeSetupRoute) }) { Text("Set up AI coach") }
                 } else {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = vm::runCheckIn, enabled = !busy) { Text("Monthly check-in") }
-                        OutlinedButton(onClick = { nav.navigate(ClaudeChatRoute()) }) { Text("Ask Claude") }
+                        OutlinedButton(onClick = { nav.navigate(ClaudeChatRoute()) }) { Text("Ask") }
                     }
                     if (busy) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        CircularProgressIndicator(); Text("Claude is reading your summary…")
+                        CircularProgressIndicator(); Text("Reading your summary…")
                     }
                     checkIn?.let { (c, cost) ->
                         Text(c.summary, style = MaterialTheme.typography.bodyLarge)
@@ -207,9 +211,9 @@ fun InsightsScreen(nav: NavController, vm: InsightsViewModel = hiltViewModel()) 
                                 }
                             }
                         }
-                        Text("${cost.label()} · ${ClaudeCoach.MODEL}", style = MaterialTheme.typography.labelSmall)
+                        Text("${cost.label()} · ${aiLabel}", style = MaterialTheme.typography.labelSmall)
                     }
-                    TextButton(onClick = { nav.navigate(ClaudeSetupRoute) }) { Text("Claude settings & what's shared") }
+                    TextButton(onClick = { nav.navigate(ClaudeSetupRoute) }) { Text("AI settings & what's shared") }
                 }
                 message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
             }
@@ -241,7 +245,7 @@ private fun InsightRow(i: Insight, claudeOn: Boolean, nav: NavController, onDism
         Text(i.detail, style = MaterialTheme.typography.bodyMedium)
         Row(Modifier.horizontalScroll(rememberScrollState())) {
             i.transactionIds.firstOrNull()?.let { id -> TextButton(onClick = { nav.navigate(TransactionRoute(id)) }) { Text("View") } }
-            if (claudeOn) TextButton(onClick = { nav.navigate(ClaudeChatRoute("Can you explain this and what I should do? \"${i.title}: ${i.detail}\"")) }) { Text("Ask Claude") }
+            if (claudeOn) TextButton(onClick = { nav.navigate(ClaudeChatRoute("Can you explain this and what I should do? \"${i.title}: ${i.detail}\"")) }) { Text("Ask AI") }
             TextButton(onClick = onDismiss) { Text("Dismiss") }
         }
     }
@@ -350,60 +354,86 @@ fun GoalEditScreen(nav: NavController, vm: GoalEditViewModel = hiltViewModel()) 
     }
 }
 
-// ------------------------------------------------------------------ Claude setup & consent
+// ------------------------------------------------------------------ AI coach setup & consent
 
 @HiltViewModel
-class ClaudeSetupViewModel @Inject constructor(private val claude: ClaudeRepository) : ViewModel() {
-    val enabled = claude.enabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+class ClaudeSetupViewModel @Inject constructor(private val ai: AiRepository) : ViewModel() {
+    val enabled = ai.enabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+    val config = ai.config.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     val preview = MutableStateFlow<String?>(null)
+    val error = MutableStateFlow<String?>(null)
 
-    fun loadPreview() = viewModelScope.launch { preview.value = claude.context() }
-    fun enable(key: String) = viewModelScope.launch { claude.enable(key) }
-    fun disable() = viewModelScope.launch { claude.disable() }
+    fun loadPreview() = viewModelScope.launch { preview.value = ai.context() }
+    fun enable(config: AiConfig, key: String) = viewModelScope.launch {
+        error.value = try { ai.enable(config, key); null } catch (e: AiException) { e.message }
+    }
+    fun disable() = viewModelScope.launch { ai.disable() }
 }
 
 @Composable
 fun ClaudeSetupScreen(nav: NavController, vm: ClaudeSetupViewModel = hiltViewModel()) {
     val enabled by vm.enabled.collectAsStateWithLifecycle()
+    val config by vm.config.collectAsStateWithLifecycle()
     val preview by vm.preview.collectAsStateWithLifecycle()
+    val error by vm.error.collectAsStateWithLifecycle()
+    var preset by remember { mutableStateOf(AiPresets.ALL.first()) }
+    var baseUrl by remember(preset) { mutableStateOf(preset.baseUrl) }
+    var model by remember(preset) { mutableStateOf(preset.defaultModel) }
     var key by remember { mutableStateOf("") }
     var agreed by remember { mutableStateOf(false) }
+    val chosenHost = if (preset.kind == AiKind.ANTHROPIC) "api.anthropic.com" else runCatching { java.net.URI(baseUrl).host }.getOrNull() ?: "your provider"
     Column(Modifier.fillMaxSize()) {
-        BackTopBar("Claude coach", onBack = { nav.popBackStack() })
+        BackTopBar("AI coach", onBack = { nav.popBackStack() })
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             SectionCard("What it does") {
                 Text("• Monthly check-in: feedback on how your month went, and goal suggestions you can add with one tap.")
-                Text("• Ask Claude: questions about your spending, saving, TFSA/RRSP/FHSA, or anything the app flagged.")
-                Text("Unusual-activity warnings and goal tracking work without Claude — they run on your phone.", style = MaterialTheme.typography.bodySmall)
+                Text("• Ask: questions about your spending, saving, TFSA/RRSP/FHSA, or anything the app flagged.")
+                Text("Use any AI you like: Claude, ChatGPT, Gemini, Mistral, DeepSeek, Groq, OpenRouter or any OpenAI-compatible service. " +
+                    "Unusual-activity warnings and goal tracking work without it; they run on your phone.", style = MaterialTheme.typography.bodySmall)
             }
             SectionCard("What's shared, and when") {
-                Text("Only when you tap Check-in or send a question, the app sends Anthropic a text summary of your finances: " +
+                Text("Only when you tap Check-in or send a question, the app sends the AI provider you choose a text summary of your finances: " +
                     "account nicknames, monthly totals, categories, merchants, bills, balances, holdings, flagged items and goals. " +
                     "Account and card numbers are never included. Nothing is sent in the background.")
-                Text("This is an exception to the app's \"only Questrade\" network rule, and only applies while this is turned on. " +
-                    "Data goes to api.anthropic.com under Anthropic's API terms. Chats are kept in memory only and disappear when you close the app.",
+                Text("This is an exception to the app's \"only Questrade\" network rule: while it's on, the app may also reach your chosen " +
+                    "provider's server (HTTPS only), under that provider's API terms. Chats are kept in memory only and disappear when you close the app.",
                     style = MaterialTheme.typography.bodySmall)
                 OutlinedButton(onClick = vm::loadPreview) { Text(if (preview == null) "Show exactly what's sent" else "Refresh preview") }
                 preview?.let {
                     Text(it, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall, modifier = Modifier.horizontalScroll(rememberScrollState()))
                 }
             }
-            if (enabled) {
-                Text("Claude coach is on (${ClaudeCoach.MODEL}).", style = MaterialTheme.typography.titleMedium)
+            val c = config
+            if (enabled && c != null) {
+                SectionCard("On") {
+                    Text("${c.label} · ${c.model}", style = MaterialTheme.typography.titleMedium)
+                    Text("Connects to ${c.host}", style = MaterialTheme.typography.bodySmall)
+                }
                 OutlinedButton(onClick = vm::disable, modifier = Modifier.fillMaxWidth()) { Text("Turn off and delete my API key") }
+                Text("To switch to a different AI, turn it off and set it up again.", style = MaterialTheme.typography.bodySmall)
             } else {
-                SectionCard("Turn it on") {
-                    Text("You need your own Anthropic API key: console.anthropic.com → API keys. Usage is billed to that account " +
-                        "(a check-in is typically a few cents). A claude.ai subscription doesn't include API use.")
-                    OutlinedTextField(key, { key = it.trim() }, Modifier.fillMaxWidth(), label = { Text("API key (sk-ant-…)") }, singleLine = true,
-                        visualTransformation = PasswordVisualTransformation())
+                SectionCard("Choose your AI") {
+                    Picker("Provider", preset, AiPresets.ALL, { it.label }, { preset = it }, Modifier.fillMaxWidth())
+                    if (preset.kind == AiKind.OPENAI_COMPATIBLE) {
+                        OutlinedTextField(baseUrl, { baseUrl = it.trim() }, Modifier.fillMaxWidth(), label = { Text("API address (https://…/v1)") }, singleLine = true)
+                    }
+                    OutlinedTextField(model, { model = it.trim() }, Modifier.fillMaxWidth(), label = { Text("Model name") }, singleLine = true,
+                        supportingText = { Text(if (preset.kind == AiKind.ANTHROPIC) "Default: claude-opus-5-5" else "Exactly as your provider lists it") })
+                    OutlinedTextField(key, { key = it.trim() }, Modifier.fillMaxWidth(), label = { Text("API key") }, singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(), supportingText = { Text("Get one at ${preset.keyHelp}") })
+                    Text("API use is billed by your provider; a check-in is usually a few cents. Chat subscriptions (Claude.ai, ChatGPT Plus) " +
+                        "don't include API use.", style = MaterialTheme.typography.bodySmall)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         androidx.compose.material3.Checkbox(agreed, { agreed = it })
-                        Text("I understand my financial summary is sent to Anthropic when I use these features.")
+                        Text("I understand my financial summary is sent to $chosenHost when I use these features.")
                     }
-                    Button(onClick = { vm.enable(key); key = "" }, enabled = agreed && key.startsWith("sk-ant-") && key.length > 20, modifier = Modifier.fillMaxWidth()) {
-                        Text("Turn on Claude coach")
-                    }
+                    Button(
+                        onClick = { vm.enable(AiConfig(preset.kind, preset.label, baseUrl, model.ifBlank { preset.defaultModel }), key); key = "" },
+                        enabled = agreed && key.length >= 10 && (model.isNotBlank() || preset.defaultModel.isNotBlank()) &&
+                            (preset.kind == AiKind.ANTHROPIC || baseUrl.startsWith("https://")),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Turn on AI coach") }
+                    error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     Text("The key is stored encrypted on this phone, like your Questrade token.", style = MaterialTheme.typography.bodySmall)
                 }
             }
@@ -416,12 +446,11 @@ fun ClaudeSetupScreen(nav: NavController, vm: ClaudeSetupViewModel = hiltViewMod
 data class ChatLine(val fromUser: Boolean, val text: String, val meta: String? = null)
 
 @HiltViewModel
-class ClaudeChatViewModel @Inject constructor(savedState: SavedStateHandle, private val claude: ClaudeRepository) : ViewModel() {
+class ClaudeChatViewModel @Inject constructor(savedState: SavedStateHandle, private val claude: AiRepository) : ViewModel() {
     val initialPrompt = savedState.toRoute<ClaudeChatRoute>().prompt
-    val lines = MutableStateFlow(claude.chat.value.flatMap { listOf(ChatLine(true, it.question), ChatLine(false, answerText(it.answer))) })
+    val lines = MutableStateFlow(claude.chat.value.flatMap { listOf(ChatLine(true, it.question), ChatLine(false, it.answer)) })
+    val aiLabel = claude.config.stateIn(viewModelScope, SharingStarted.Eagerly, null)
     val streaming = MutableStateFlow(false)
-
-    private fun answerText(m: com.anthropic.models.messages.Message) = m.content().mapNotNull { it.text().orElse(null)?.text() }.joinToString("")
 
     fun send(q: String) {
         if (q.isBlank() || streaming.value) return
@@ -431,14 +460,14 @@ class ClaudeChatViewModel @Inject constructor(savedState: SavedStateHandle, priv
             try {
                 claude.ask(q).collect { e ->
                     when (e) {
-                        is ChatEvent.Text -> updateLast { it.copy(text = it.text + e.delta) }
-                        is ChatEvent.Done -> {
+                        is AiEvent.Text -> updateLast { it.copy(text = it.text + e.delta) }
+                        is AiEvent.Done -> {
                             claude.appendTurn(e.turn)
-                            updateLast { it.copy(text = answerText(e.turn.answer).ifEmpty { it.text }, meta = e.cost.label()) }
+                            updateLast { it.copy(text = e.turn.answer.ifEmpty { it.text }, meta = e.usage.label()) }
                         }
                     }
                 }
-            } catch (e: ClaudeException) {
+            } catch (e: AiException) {
                 updateLast { it.copy(text = e.message ?: "Something went wrong.", meta = "error") }
             } finally {
                 streaming.value = false
@@ -466,11 +495,11 @@ fun ClaudeChatScreen(nav: NavController, vm: ClaudeChatViewModel = hiltViewModel
     LaunchedEffect(lines.size, lines.lastOrNull()?.text?.length) { if (lines.isNotEmpty()) listState.animateScrollToItem(lines.size - 1) }
 
     Column(Modifier.fillMaxSize().imePadding()) {
-        BackTopBar("Ask Claude", onBack = { nav.popBackStack() }, actions = { TextButton(onClick = vm::newChat, enabled = !streaming) { Text("New chat") } })
+        BackTopBar("Ask ${vm.aiLabel.collectAsStateWithLifecycle().value?.label?.substringBefore(" (") ?: "AI"}", onBack = { nav.popBackStack() }, actions = { TextButton(onClick = vm::newChat, enabled = !streaming) { Text("New chat") } })
         LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp), state = listState, verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (lines.isEmpty()) item {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Claude sees your privacy-filtered summary. Try:", style = MaterialTheme.typography.bodyMedium)
+                    Text("The AI sees your privacy-filtered summary. Try:", style = MaterialTheme.typography.bodyMedium)
                     listOf(
                         "Where could I cut \$200 a month without much pain?",
                         "Should my next \$5,000 go to my TFSA, RRSP or FHSA?",
@@ -487,7 +516,7 @@ fun ClaudeChatScreen(nav: NavController, vm: ClaudeChatViewModel = hiltViewModel
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Column(Modifier.padding(12.dp)) {
-                        Text(if (l.fromUser) "You" else "Claude", style = MaterialTheme.typography.labelMedium)
+                        Text(if (l.fromUser) "You" else "Coach", style = MaterialTheme.typography.labelMedium)
                         Text(l.text.ifEmpty { "…" }, style = MaterialTheme.typography.bodyMedium)
                         l.meta?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
                     }

@@ -263,3 +263,12 @@ Requested by the owner after the first build:
      (nicknames, masked numbers) and only when the owner taps a Claude button.
    - This replaces "in-app AI" in *Not in scope*, and adds one exception to rule 3: while the coach is turned
      on, the app may also talk to `api.anthropic.com`. It is off by default.
+
+### Amendment (November 15, 2026)
+
+- **Any AI.** The coach works with the AI the owner chooses: Claude (official Anthropic SDK) or any service
+  with an OpenAI-compatible Chat Completions API (OpenAI, Google Gemini, Mistral, DeepSeek, Groq,
+  OpenRouter, or a custom HTTPS endpoint). The rule-3 exception now covers that one chosen host, HTTPS only.
+- **Complete months only.** The dashboard shows a month only once every statement account covers it.
+- **Income from bank accounts only.** Card refunds reduce spending; activity inside investment accounts is
+  neither income nor spending.

@@ -10,10 +10,11 @@ A private, single-user Android app that tracks one person's money (BC, Canada; C
 2. **Questrade is read-only.** Read permissions only. Never add code that places, changes or cancels orders.
 3. **Everything stays on the phone.** No backend, no cloud sync, no analytics / crash reporting / ads /
    tracking SDKs. Network traffic goes only to Questrade's login and API servers (enforced by
-   `AllowedHostsInterceptor`, app/.../net) and — **only when the user has turned on the opt-in Claude
-   coach** — to `api.anthropic.com` through the official Anthropic SDK (`app/.../claude`). Claude only ever
-   receives `ClaudeRepository.context()` (the privacy-filtered summary the consent screen previews), only
-   on an explicit tap; never in the background. Don't loosen any of this. (Owner amendment, docs/SPEC.md.)
+   `AllowedHostsInterceptor`, app/.../net) and — **only when the user has turned on the opt-in AI coach** —
+   to the one HTTPS host of the AI provider they chose (Claude via the official Anthropic SDK, or any
+   OpenAI-compatible endpoint via OkHttp with an interceptor that allows only that host). The AI only ever
+   receives `AiRepository.context()` (the privacy-filtered summary the consent screen previews), only on an
+   explicit tap; never in the background. Don't loosen any of this. (Owner amendments, docs/SPEC.md.)
 4. **No real financial data in git.** Real exports live in `samples/` (gitignored). Tests use synthetic
    fixtures under `core/src/test/resources/fixtures/` that copy the *structure* only, with made-up rows.
    Never commit tokens, account numbers, statements or screenshots of real data.
@@ -35,7 +36,7 @@ A private, single-user Android app that tracks one person's money (BC, Canada; C
   `String.repeat` from Java, `HexFormat`).
 - `app/` — Android: Compose UI, Room + SQLCipher, DataStore + Tink secrets, Questrade client, WorkManager
   jobs, notifications, file import (SAF + share/open-with, quick import), encrypted statement library,
-  PdfBox text extraction, opt-in Claude coach (`claude/`), Hilt DI.
+  PdfBox text extraction, opt-in AI coach (`ai/`: Anthropic SDK or any OpenAI-compatible API), Hilt DI.
 - `core/` also holds missing-statement detection (`statements/`), unusual-activity insights (`insights/`) and
   goal progress (`goals/`) — all offline and deterministic.
 
@@ -57,8 +58,9 @@ A private, single-user Android app that tracks one person's money (BC, Canada; C
 ./gradlew assembleDebug              # debug APK -> app/build/outputs/apk/debug/
 ```
 
-Claude API code: model `claude-opus-5-5`, server-side refusal fallback on, cached financial-data block.
-Tests use MockWebServer only (`ClaudeCoachTest`); never call the real API from tests.
+AI coach: `AiProvider` with `AnthropicProvider` (official SDK, default model `claude-opus-5-5`, refusal
+fallback, cached data block) and `OpenAiCompatibleProvider` (Chat Completions over OkHttp). Prompts live in
+`AiPrompts` and are shared. Tests use MockWebServer only; never call a real AI API from tests.
 
 Snapshot test for the summary export: `UPDATE_SNAPSHOTS=true ./gradlew :core:test` rewrites
 `core/src/test/resources/snapshots/summary.md`; review the diff before committing.

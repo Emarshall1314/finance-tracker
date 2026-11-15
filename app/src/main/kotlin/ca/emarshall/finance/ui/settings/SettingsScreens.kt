@@ -103,7 +103,7 @@ fun SettingsScreen(nav: NavController, vm: SettingsViewModel = hiltViewModel()) 
         item {
             ca.emarshall.finance.ui.design.Group {
                 Row("Questrade", Icons.AutoMirrored.Filled.ShowChart, p.chart[2], "Read-only") { nav.navigate(QuestradeRoute) }
-                Row("Claude coach", Icons.Default.AutoAwesome, p.chart[5], "Optional", last = true) { nav.navigate(ClaudeSetupRoute) }
+                Row("AI coach", Icons.Default.AutoAwesome, p.chart[5], "Optional", last = true) { nav.navigate(ClaudeSetupRoute) }
             }
         }
         item {
@@ -120,7 +120,7 @@ fun SettingsScreen(nav: NavController, vm: SettingsViewModel = hiltViewModel()) 
         item {
             Text(
                 "Finance Tracker ${BuildConfig.VERSION_NAME} · Everything stays on this phone, encrypted. Connections go only to " +
-                    "Questrade (read-only) and, if you turn on the Claude coach, to Anthropic.",
+                    "Questrade (read-only) and, if you turn on the AI coach, to the AI provider you chose.",
                 Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall, color = p.secondaryLabel,
             )
             if (deleted) Text("All data deleted.", Modifier.padding(16.dp), color = MaterialTheme.colorScheme.primary)
@@ -174,7 +174,7 @@ fun SecurityScreen(nav: NavController, vm: SettingsViewModel = hiltViewModel()) 
             SectionCard("Where your data lives") {
                 Text("• Everything is in an encrypted database on this phone (SQLCipher). The key is protected by Android's Keystore.")
                 Text("• No cloud, no analytics, no ads. Backups and device-to-device transfer are turned off for this app.")
-                Text("• Internet connections go only to Questrade's login and API servers (read-only), plus api.anthropic.com if you turn on the optional Claude coach.")
+                Text("• Internet connections go only to Questrade's login and API servers (read-only), plus your chosen AI provider if you turn on the optional AI coach.")
                 Text("• Bank data only comes in as files you import. The app never asks for bank passwords.")
             }
         }
