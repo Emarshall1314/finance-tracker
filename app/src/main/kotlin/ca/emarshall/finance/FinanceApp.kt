@@ -3,6 +3,7 @@ package ca.emarshall.finance
 import android.app.Application
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
+import ca.emarshall.finance.data.AccountRepository
 import ca.emarshall.finance.data.CategoryRepository
 import ca.emarshall.finance.data.ImportRepository
 import ca.emarshall.finance.data.SettingsRepository
@@ -29,6 +30,7 @@ class FinanceApp : Application(), Configuration.Provider {
     @Inject lateinit var questrade: dagger.Lazy<QuestradeRepository>
     @Inject lateinit var imports: dagger.Lazy<ImportRepository>
     @Inject lateinit var settings: dagger.Lazy<SettingsRepository>
+    @Inject lateinit var accounts: dagger.Lazy<AccountRepository>
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -46,10 +48,11 @@ class FinanceApp : Application(), Configuration.Provider {
                 reminders.get().rescheduleAll()
                 if (questrade.get().isConnected()) QuestradeSyncWorker.schedule(this@FinanceApp)
                 // Once: move statements that older versions filed in the wrong account (Visa into chequing).
-                if (settings.get().repairVersion() < 1) {
-                    imports.get().repairMisfiledImports()
-                    settings.get().setRepairVersion(1)
-                }
+                val done = settings.get().repairVersion()
+                if (done < 1) imports.get().repairMisfiledImports()
+                // Accounts set up from statements before the app asked: ask once now.
+                if (done < 2) accounts.get().markStatementAccountsUnconfirmed()
+                if (done < 2) settings.get().setRepairVersion(2)
             } catch (e: Exception) {
                 AppLog.w("FinanceApp", "Startup task failed: ${e.javaClass.simpleName}")
             }

@@ -70,12 +70,12 @@ fun AccountsScreen(nav: NavController, vm: AccountsViewModel = hiltViewModel()) 
     Scaffold(
         topBar = { BackTopBar("Accounts", onBack = { nav.popBackStack() }) },
         floatingActionButton = {
-            ExtendedFloatingActionButton(onClick = { nav.navigate(AccountEditRoute()) }, icon = { Icon(Icons.Default.Add, null) }, text = { Text("Add account") })
+            ExtendedFloatingActionButton(onClick = { nav.navigate(AccountEditRoute()) }, icon = { Icon(Icons.Default.Add, null) }, text = { Text("Add manually") })
         },
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             val list = accounts ?: return@Column
-            if (list.isEmpty()) EmptyState("Add your Scotiabank and Canadian Tire accounts, or just import statements: accounts are created automatically. Questrade accounts appear when you connect.")
+            if (list.isEmpty()) EmptyState("Import your statements and the app sets up each account from them. Questrade accounts appear when you connect.")
             list.groupBy { it.institutionEnum }.forEach { (inst, accs) ->
                 ca.emarshall.finance.ui.design.SectionHeader(inst.displayName)
                 ca.emarshall.finance.ui.design.Group {
@@ -117,7 +117,7 @@ class AccountEditViewModel @Inject constructor(savedState: SavedStateHandle, pri
     fun save(nickname: String, institution: Institution, type: AccountType, last4: String, currency: String) = viewModelScope.launch {
         val e = existing.value
         if (e == null) repo.add(nickname, institution, type, last4.ifBlank { null }, currency)
-        else repo.update(e.copy(nickname = nickname.trim(), institution = institution.name, type = type.name, last4 = last4.filter { it.isDigit() }.takeLast(4).ifEmpty { null }, currency = currency))
+        else repo.update(e.copy(nickname = nickname.trim(), institution = institution.name, type = type.name, last4 = last4.filter { it.isDigit() }.takeLast(4).ifEmpty { null }, currency = currency, confirmed = true))
         saved.value = true
     }
 

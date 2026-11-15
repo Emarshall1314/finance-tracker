@@ -55,6 +55,29 @@ interface AccountDao {
 
     @Query("DELETE FROM accounts WHERE id = :id")
     suspend fun delete(id: Long)
+
+    @Query("SELECT * FROM accounts WHERE confirmed = 0 ORDER BY createdAtMillis")
+    fun observeUnconfirmed(): Flow<List<AccountEntity>>
+
+    @Query("UPDATE accounts SET confirmed = 0 WHERE questradeNumber IS NULL")
+    suspend fun markStatementAccountsUnconfirmed()
+
+    // Merging one account into another. Rows that already exist in the target (same fingerprint or
+    // date) are left behind and go when the source account is deleted.
+    @Query("UPDATE OR IGNORE transactions SET accountId = :into WHERE accountId = :from")
+    suspend fun moveTransactions(from: Long, into: Long)
+
+    @Query("UPDATE transactions SET transferLinkId = NULL WHERE transferLinkId IN (SELECT id FROM transactions WHERE accountId = :from)")
+    suspend fun unlinkLeftovers(from: Long)
+
+    @Query("UPDATE import_batches SET accountId = :into WHERE accountId = :from")
+    suspend fun moveBatches(from: Long, into: Long)
+
+    @Query("UPDATE OR IGNORE balance_snapshots SET accountId = :into WHERE accountId = :from")
+    suspend fun moveBalances(from: Long, into: Long)
+
+    @Query("UPDATE OR IGNORE csv_profiles SET accountId = :into WHERE accountId = :from")
+    suspend fun moveCsvProfile(from: Long, into: Long)
 }
 
 private const val TX_SELECT = """

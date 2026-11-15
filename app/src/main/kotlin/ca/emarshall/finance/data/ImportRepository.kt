@@ -10,6 +10,8 @@ import ca.emarshall.finance.core.csv.CsvProfileInference
 import ca.emarshall.finance.core.csv.CsvReader
 import ca.emarshall.finance.core.csv.CsvStatementParser
 import ca.emarshall.finance.core.csv.InferredProfile
+import ca.emarshall.finance.core.importing.AccountGuess
+import ca.emarshall.finance.core.importing.AccountGuesser
 import ca.emarshall.finance.core.importing.AccountMatcher
 import ca.emarshall.finance.core.importing.AccountRef
 import ca.emarshall.finance.core.importing.Dedup
@@ -24,6 +26,7 @@ import ca.emarshall.finance.core.model.TxSource
 import ca.emarshall.finance.core.ofx.OfxParser
 import ca.emarshall.finance.core.statement.StatementTextParser
 import ca.emarshall.finance.data.db.AccountEntity
+import ca.emarshall.finance.data.db.allLast4
 import ca.emarshall.finance.data.db.BalanceDao
 import ca.emarshall.finance.data.db.BalanceSnapshotEntity
 import ca.emarshall.finance.data.db.CsvProfileEntity
@@ -147,7 +150,7 @@ class ImportRepository @Inject constructor(
     /** The account this file belongs to, or null when none fits (never one of a different kind). */
     fun suggestAccount(hint: AccountHint, all: List<AccountEntity>): Long? = AccountMatcher.match(hint, all.map { it.ref() })
 
-    private fun AccountEntity.ref() = AccountRef(id, institutionEnum, typeEnum, last4)
+    private fun AccountEntity.ref() = AccountRef(id, institutionEnum, typeEnum, allLast4)
 
     /** Why this file shouldn't go into [account], for the review screen; null when it fits. */
     fun mismatch(hint: AccountHint, account: AccountEntity): String? {
@@ -339,22 +342,48 @@ class ImportRepository @Inject constructor(
         }
     }
 
-    /** A statement says which bank and type it is; create that account if the user doesn't have one yet. */
+    /** What the app would set up for this file if none of the user's accounts fits it. */
+    suspend fun guessAccount(d: DetectedFile): AccountGuess? = AccountGuesser.guess(d.hint, accounts.all().map { it.nickname })
+
+    /** Sets up an account from a guess. It stays "unconfirmed" until the user says it's right. */
+    suspend fun createFromGuess(g: AccountGuess, confirmed: Boolean = false): AccountEntity =
+        accounts.get(accounts.add(g.nickname, g.institution, g.type, g.last4, g.currency, confirmed = confirmed))!!
+
+    /**
+     * A statement says which bank and kind of account it is; set that account up if nothing the user has
+     * fits. Not when an account of that kind exists but couldn't be told apart: then the user picks.
+     */
     private suspend fun autoCreateAccount(d: DetectedFile, all: List<AccountEntity>): AccountEntity? {
-        if (d.file.format == FileFormat.CSV) return null
-        val inst = d.hint.institution ?: return null
-        val type = d.hint.accountType ?: return null
-        // Only when nothing fits: an existing account of this kind that couldn't be told apart means the user picks.
-        if (all.any { AccountMatcher.compatible(d.hint, it.ref()) && it.typeEnum == type }) return null
-        val name = when {
-            inst == Institution.CANADIAN_TIRE && type == AccountType.CREDIT_CARD -> "Triangle Mastercard"
-            inst == Institution.SCOTIABANK && type == AccountType.CREDIT_CARD -> "Scotia Visa"
-            inst == Institution.SCOTIABANK -> "Scotiabank ${type.displayName}"
-            else -> "${inst.displayName} ${type.displayName}"
+        val guess = AccountGuesser.guess(d.hint, all.map { it.nickname }) ?: return null
+        val sameKind = d.hint.copy(accountType = guess.type)
+        if (all.any { AccountMatcher.compatible(sameKind, it.ref()) && it.typeEnum == guess.type }) return null
+        return createFromGuess(guess)
+    }
+
+    /**
+     * Folds [fromId] into [intoId] (the app guessed a new account, but it's one the user already has, e.g.
+     * a reissued card): transactions, imports, balances and the CSV mapping move, and the target keeps the
+     * old account's card digits so future statements match it.
+     */
+    suspend fun mergeAccounts(fromId: Long, intoId: Long) {
+        if (fromId == intoId) return
+        val from = accounts.get(fromId) ?: return
+        val into = accounts.get(intoId) ?: return
+        db.withTransaction {
+            val dao = db.accounts()
+            dao.moveTransactions(fromId, intoId)
+            dao.unlinkLeftovers(fromId)
+            dao.moveBatches(fromId, intoId)
+            dao.moveBalances(fromId, intoId)
+            dao.moveCsvProfile(fromId, intoId)
+            val digits = into.allLast4 + from.allLast4
+            // The newest card's digits are the account's main ending; the rest are kept for matching.
+            val newest = if (from.createdAtMillis > into.createdAtMillis) from.last4 ?: into.last4 else into.last4 ?: from.last4
+            dao.update(into.copy(last4 = newest, otherLast4 = (digits - setOfNotNull(newest)).sorted().joinToString(",").ifEmpty { null }, closingDay = into.closingDay ?: from.closingDay))
+            dao.delete(fromId)
         }
-        // A second card of the same kind gets its digits in the name so the two can be told apart.
-        val unique = if (all.any { it.nickname == name }) d.hint.last4?.let { "$name $it" } ?: "$name 2" else name
-        return accounts.get(accounts.add(unique, inst, type, d.hint.last4, d.hint.currency ?: "CAD"))
+        transactions.rematchTransfers()
+        reminders.rescheduleAll()
     }
 
     /**

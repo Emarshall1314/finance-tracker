@@ -24,7 +24,14 @@ data class AccountEntity(
     /** Last day Questrade activities were synced through. */
     val questradeSyncedThrough: LocalDate? = null,
     val createdAtMillis: Long = System.currentTimeMillis(),
+    /** False for an account the app set up from a statement until the user says the guess is right. */
+    @ColumnInfo(defaultValue = "1") val confirmed: Boolean = true,
+    /** Earlier last-four digits (a reissued card, or an account merged into this one), comma-separated. */
+    val otherLast4: String? = null,
 )
+
+/** Every ending this account has had, for matching statements to it. */
+val AccountEntity.allLast4: Set<String> get() = setOfNotNull(last4) + otherLast4.orEmpty().split(',').filter { it.isNotBlank() }
 
 @Entity(
     tableName = "transactions",

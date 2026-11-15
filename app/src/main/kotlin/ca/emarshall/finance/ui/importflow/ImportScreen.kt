@@ -57,6 +57,14 @@ import ca.emarshall.finance.data.DetectedFile
 import ca.emarshall.finance.data.ImportRepository
 import ca.emarshall.finance.data.QuickImportOutcome
 import ca.emarshall.finance.data.db.AccountEntity
+import ca.emarshall.finance.data.db.allLast4
+import ca.emarshall.finance.core.importing.AccountGuesser
+import ca.emarshall.finance.core.importing.AccountMatcher
+import ca.emarshall.finance.core.importing.AccountRef
+import ca.emarshall.finance.core.model.AccountType
+import ca.emarshall.finance.core.model.Institution
+import androidx.compose.material3.OutlinedTextField
+import ca.emarshall.finance.ui.accounts.NewAccountsCard
 import ca.emarshall.finance.data.institutionEnum
 import ca.emarshall.finance.data.typeEnum
 import ca.emarshall.finance.ui.BackTopBar
@@ -103,12 +111,12 @@ fun ImportScreen(nav: NavController, vm: ImportViewModel = hiltViewModel()) {
                 }
                 is ImportStep.ChooseAccount -> {
                     s.reason?.let { Text("Needs a quick check: $it", color = MaterialTheme.colorScheme.error) }
-                    ChooseAccount(s.detected, accounts, vm.preselectedAccountId, vm::chooseAccount, vm::createAccountFromHint)
+                    ChooseAccount(s.detected, accounts, vm.preselectedAccountId, vm::chooseAccount, vm::createAccount)
                 }
-                is ImportStep.Batch -> BatchStep(s, vm)
+                is ImportStep.Batch -> BatchStep(s, vm, nav)
                 is ImportStep.Mapping -> MappingEditor(s, vm)
                 is ImportStep.Preview -> PreviewStep(s, vm)
-                is ImportStep.Done -> DoneStep(s, vm, onView = { nav.navigate(TransactionsRoute(accountId = s.result.accountId)) })
+                is ImportStep.Done -> DoneStep(s, vm, nav, onView = { nav.navigate(TransactionsRoute(accountId = s.result.accountId)) })
                 is ImportStep.Failed -> {
                     Text(s.message, color = MaterialTheme.colorScheme.error)
                     Button(onClick = { vm.restart() }) { Text("Try another file") }
@@ -119,7 +127,7 @@ fun ImportScreen(nav: NavController, vm: ImportViewModel = hiltViewModel()) {
 }
 
 @Composable
-private fun BatchStep(s: ImportStep.Batch, vm: ImportViewModel) {
+private fun BatchStep(s: ImportStep.Batch, vm: ImportViewModel, nav: NavController) {
     val imported = s.imported
     val white = androidx.compose.ui.graphics.Color.White
     HeroCard(Fin.palette.heroGradient) {
@@ -138,6 +146,7 @@ private fun BatchStep(s: ImportStep.Batch, vm: ImportViewModel) {
             )
         }
     }
+    if (!s.working) NewAccountsCard(nav)
     if (s.needsReview.isNotEmpty() && !s.working) {
         SectionHeader("Needs a quick check")
         Group {
@@ -199,7 +208,7 @@ private fun ChooseAccount(
     accounts: List<AccountEntity>,
     preselected: Long?,
     onChoose: (DetectedFile, AccountEntity) -> Unit,
-    onCreate: (DetectedFile) -> Unit,
+    onCreate: (DetectedFile, String, Institution, AccountType) -> Unit,
 ) {
     val candidates = accounts.filter { !it.typeEnum.isInvestment || it.questradeNumber == null }
     var selected by remember(d) { mutableStateOf(candidates.firstOrNull { it.id == (preselected ?: d.suggestedAccountId) }) }
@@ -220,11 +229,42 @@ private fun ChooseAccount(
             color = MaterialTheme.colorScheme.error,
         )
     }
-    Picker("Which account is this?", selected, candidates, { "${it.nickname} (${it.institutionEnum.displayName}${it.last4?.let { l -> " ••$l" } ?: ""})" }, { selected = it }, Modifier.fillMaxWidth(), "Choose an account")
-    Button(onClick = { selected?.let { onChoose(d, it) } }, enabled = selected != null, modifier = Modifier.fillMaxWidth()) { Text("Continue") }
-    if (d.hint.institution != null) {
-        OutlinedButton(onClick = { onCreate(d) }, modifier = Modifier.fillMaxWidth()) {
-            Text("Create a new ${ImportRepository.institutionLabel(d.hint.institution)} account for it")
+    val fitting = candidates.filter { AccountMatcher.compatible(d.hint, AccountRef(it.id, it.institutionEnum, it.typeEnum, it.allLast4)) }
+    if (selected != null) {
+        Picker("Which account is this?", selected, candidates, { "${it.nickname} (${it.institutionEnum.displayName}${it.last4?.let { l -> " ••$l" } ?: ""})" }, { selected = it }, Modifier.fillMaxWidth(), "Choose an account")
+        Button(onClick = { selected?.let { onChoose(d, it) } }, modifier = Modifier.fillMaxWidth()) { Text("Continue") }
+        TextButton(onClick = { selected = null }) { Text("It's a different account: set up a new one") }
+        return
+    }
+    // Nothing picked for it: offer to set up the account the file describes, ready to edit.
+    val guess = remember(d, accounts) { AccountGuesser.guess(d.hint, accounts.map { it.nickname }) }
+    var name by remember(guess) { mutableStateOf(guess?.nickname.orEmpty()) }
+    var inst by remember(guess) { mutableStateOf(guess?.institution ?: d.hint.institution ?: Institution.OTHER) }
+    var type by remember(guess) { mutableStateOf(guess?.type ?: d.hint.accountType ?: AccountType.CHEQUING) }
+    SectionHeader(if (guess != null) "Looks like a new account" else "New account")
+    FinCard {
+        Text(
+            if (guess != null) "Is this right? Change anything that isn't." else "The file doesn't say which bank or account it's from. What is it?",
+            style = MaterialTheme.typography.bodyMedium, color = Fin.palette.secondaryLabel,
+        )
+        OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text("Name") }, singleLine = true)
+        Picker("Bank", inst, Institution.entries.filter { it != Institution.QUESTRADE }, { it.displayName }, { inst = it }, Modifier.fillMaxWidth())
+        Picker("Kind of account", type, AccountType.entries.filter { !it.isInvestment }, { it.displayName }, { type = it }, Modifier.fillMaxWidth())
+        d.hint.last4?.let { Text("Ending in ••$it", style = MaterialTheme.typography.bodySmall, color = Fin.palette.secondaryLabel) }
+    }
+    Button(onClick = { onCreate(d, name.trim(), inst, type) }, enabled = name.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
+        Text(if (guess != null) "Yes, set it up" else "Set it up")
+    }
+    if (candidates.isNotEmpty()) {
+        SectionHeader("Or add it to an account you have")
+        Group {
+            val list = fitting.ifEmpty { candidates }
+            list.forEachIndexed { i, a ->
+                GroupRow(
+                    a.nickname, subtitle = listOfNotNull(a.institutionEnum.displayName, a.typeEnum.displayName, a.last4?.let { "••$it" }).joinToString(" · "),
+                    showChevron = true, divider = i < list.size - 1, onClick = { onChoose(d, a) },
+                )
+            }
         }
     }
 }
@@ -334,13 +374,14 @@ private fun PreviewStep(s: ImportStep.Preview, vm: ImportViewModel) {
 }
 
 @Composable
-private fun DoneStep(s: ImportStep.Done, vm: ImportViewModel, onView: () -> Unit) {
+private fun DoneStep(s: ImportStep.Done, vm: ImportViewModel, nav: NavController, onView: () -> Unit) {
     if (s.undone) {
         Text("Import undone. Nothing from that file remains.", style = MaterialTheme.typography.titleMedium)
         Button(onClick = { vm.restart() }) { Text("Import another file") }
         return
     }
     Text("Imported into ${s.accountName}", style = MaterialTheme.typography.titleLarge)
+    NewAccountsCard(nav)
     SectionCard(null) {
         LabeledRow("New transactions") { Text(s.result.newCount.toString()) }
         LabeledRow("Duplicates skipped") { Text(s.result.duplicateCount.toString()) }

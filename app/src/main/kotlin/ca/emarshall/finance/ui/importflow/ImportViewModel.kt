@@ -120,18 +120,9 @@ class ImportViewModel @Inject constructor(
         }
     }
 
-    /** Creates an account from what the file says about itself, e.g. "Triangle Mastercard ••3432". */
-    fun createAccountFromHint(detected: DetectedFile) = run {
-        val h = detected.hint
-        val inst = h.institution ?: Institution.OTHER
-        val type = h.accountType ?: if (inst == Institution.CANADIAN_TIRE) AccountType.CREDIT_CARD else AccountType.CHEQUING
-        val name = when {
-            inst == Institution.CANADIAN_TIRE -> "Triangle Mastercard"
-            inst == Institution.SCOTIABANK && type == AccountType.CREDIT_CARD -> "Scotia Visa"
-            inst == Institution.SCOTIABANK -> "Scotiabank ${type.displayName}"
-            else -> type.displayName
-        }
-        val id = accounts.add(name, inst, type, h.last4, h.currency ?: "CAD")
+    /** Sets up the account the user just reviewed on the import screen (so it needs no further check). */
+    fun createAccount(detected: DetectedFile, nickname: String, institution: Institution, type: AccountType) = run {
+        val id = accounts.add(nickname, institution, type, detected.hint.last4, detected.hint.currency ?: "CAD", confirmed = true)
         chooseAccount(detected, accounts.get(id)!!)
     }
 

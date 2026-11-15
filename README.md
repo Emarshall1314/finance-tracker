@@ -16,6 +16,9 @@ for what each bank's files look like.
 - **Import** PDF e-statements (Scotiabank chequing, Scotia Visa, Triangle Mastercard), CSV downloads
   (with a column-mapping screen for new layouts) and OFX/QFX/QBO files. Share a file to the app from
   Files, Drive or Gmail, or pick one in the app. Duplicates are skipped; every import can be undone.
+  There's no need to add accounts by hand: each statement says which bank, kind of account and card
+  ending it's for, and the app sets the account up from that, then asks on Home whether its guess is
+  right (keep it, change it, or say it's the same as an account you have, e.g. a reissued card).
   PDF statements are checked against their own opening/closing totals.
 - **Categorise** automatically with rules for common BC and Canadian merchants. Recategorise a
   transaction and choose "Always do this for <merchant>" to teach it.

@@ -42,7 +42,7 @@ data class Checklist(
     val hasReminders: Boolean,
     val dismissed: Boolean,
 ) {
-    val complete get() = hasAccounts && hasImports && questradeConnected && hasReminders
+    val complete get() = hasImports && questradeConnected && hasReminders
 }
 
 data class FreshnessRow(val accountId: Long, val nickname: String, val dataThrough: LocalDate?, val stale: Boolean)

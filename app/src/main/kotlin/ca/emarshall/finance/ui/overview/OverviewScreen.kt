@@ -86,6 +86,7 @@ fun OverviewScreen(nav: NavController, vm: OverviewViewModel = hiltViewModel()) 
     val stale = s.freshness.count { it.stale && it.dataThrough != null }
 
     LargeTitleScreen("Overview") {
+        item { ca.emarshall.finance.ui.accounts.NewAccountsCard(nav) }
         if (!s.loading && !s.checklist.complete && !s.checklist.dismissed) item { SetupCard(s.checklist, nav, vm::dismissChecklist) }
 
         if (!s.loading && s.hasTransactions) {
@@ -224,8 +225,7 @@ private fun SetupCard(c: Checklist, nav: NavController, onDismiss: () -> Unit) {
     FinCard {
         Text("Welcome", style = MaterialTheme.typography.headlineSmall)
         Text("A few steps to get everything in one place.", color = Fin.palette.secondaryLabel)
-        Step("Add your accounts", c.hasAccounts) { nav.navigate(AccountsRoute) }
-        Step("Import your statements", c.hasImports) { nav.navigate(ImportRoute()) }
+        Step("Import your statements (accounts are set up from them)", c.hasImports) { nav.navigate(ImportRoute()) }
         Step("Connect Questrade", c.questradeConnected) { nav.navigate(QuestradeRoute) }
         Step("Turn on statement reminders", c.hasReminders) { nav.navigate(RemindersRoute) }
         TextButton(onClick = onDismiss) { Text("Hide") }

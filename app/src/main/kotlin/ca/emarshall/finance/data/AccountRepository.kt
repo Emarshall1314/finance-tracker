@@ -15,6 +15,9 @@ val AccountEntity.typeEnum: AccountType get() = runCatching { AccountType.valueO
 class AccountRepository @Inject constructor(private val dao: AccountDao) {
     val accounts: Flow<List<AccountEntity>> = dao.observeAll()
 
+    /** Accounts set up from statements that the user hasn't checked yet. */
+    val unconfirmed: Flow<List<AccountEntity>> = dao.observeUnconfirmed()
+
     suspend fun all() = dao.all()
     suspend fun get(id: Long) = dao.get(id)
 
@@ -25,6 +28,7 @@ class AccountRepository @Inject constructor(private val dao: AccountDao) {
         last4: String?,
         currency: String = "CAD",
         closingDay: Int? = null,
+        confirmed: Boolean = true,
     ): Long = dao.insert(
         AccountEntity(
             institution = institution.name,
@@ -33,8 +37,13 @@ class AccountRepository @Inject constructor(private val dao: AccountDao) {
             currency = currency,
             last4 = last4?.filter { it.isDigit() }?.takeLast(4)?.ifEmpty { null },
             closingDay = closingDay,
+            confirmed = confirmed,
         ),
     )
+
+    suspend fun confirm(id: Long) { dao.get(id)?.let { dao.update(it.copy(confirmed = true)) } }
+
+    suspend fun markStatementAccountsUnconfirmed() = dao.markStatementAccountsUnconfirmed()
 
     suspend fun update(a: AccountEntity) = dao.update(a)
     suspend fun delete(id: Long) = dao.delete(id)
