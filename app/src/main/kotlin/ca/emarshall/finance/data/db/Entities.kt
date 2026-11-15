@@ -97,6 +97,21 @@ data class CategoryRuleEntity(
     val amountSign: Int = 0,
 )
 
+/** "I pay $X for <name> every month": see [ca.emarshall.finance.core.categorize.AmountRule]. */
+@Entity(
+    tableName = "amount_rules",
+    foreignKeys = [ForeignKey(entity = CategoryEntity::class, parentColumns = ["id"], childColumns = ["categoryId"], onDelete = ForeignKey.CASCADE)],
+    indices = [Index("categoryId")],
+)
+data class AmountRuleEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val amountCents: Long,
+    val toleranceCents: Long = 0,
+    val categoryId: Long,
+    val dayOfMonth: Int? = null,
+)
+
 @Entity(
     tableName = "import_batches",
     foreignKeys = [ForeignKey(entity = AccountEntity::class, parentColumns = ["id"], childColumns = ["accountId"], onDelete = ForeignKey.CASCADE)],

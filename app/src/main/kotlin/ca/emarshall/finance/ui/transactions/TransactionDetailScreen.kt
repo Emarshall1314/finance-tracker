@@ -25,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.material.icons.filled.Home
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
@@ -125,6 +126,17 @@ fun TransactionDetailScreen(nav: NavController, vm: TransactionDetailViewModel =
                 )
             }
             if (tx.categoryLocked) ca.emarshall.finance.ui.design.Footnote("You set this category, so rules won't change it.")
+            val investment = runCatching { ca.emarshall.finance.core.model.AccountType.valueOf(tx.accountType) }.getOrNull()?.isInvestment == true
+            if (tx.amountCents < 0 && tx.transferLinkId == null && !investment) {
+                Group {
+                    ca.emarshall.finance.ui.design.GroupRow(
+                        "I pay this amount regularly",
+                        subtitle = "Every ${ca.emarshall.finance.core.money.Money.format(-tx.amountCents)} payment gets the same category, e.g. rent",
+                        icon = androidx.compose.material.icons.Icons.Filled.Home, iconColor = p.chart[0], showChevron = true, divider = false,
+                        onClick = { nav.navigate(ca.emarshall.finance.ui.KnownPaymentEditRoute(amountCents = -tx.amountCents, day = tx.date.dayOfMonth)) },
+                    )
+                }
+            }
 
             if (tx.transferLinkId != null) {
                 ca.emarshall.finance.ui.design.SectionHeader("Transfer")

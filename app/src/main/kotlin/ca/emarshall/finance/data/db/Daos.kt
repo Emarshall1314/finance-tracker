@@ -191,6 +191,21 @@ interface CategoryDao {
     @Query("SELECT * FROM category_rules")
     suspend fun rules(): List<CategoryRuleEntity>
 
+    @Query("SELECT * FROM amount_rules ORDER BY name")
+    fun observeAmountRules(): Flow<List<AmountRuleEntity>>
+
+    @Query("SELECT * FROM amount_rules")
+    suspend fun amountRules(): List<AmountRuleEntity>
+
+    @Query("SELECT * FROM amount_rules WHERE id = :id")
+    suspend fun amountRule(id: Long): AmountRuleEntity?
+
+    @androidx.room.Upsert
+    suspend fun upsertAmountRule(r: AmountRuleEntity): Long
+
+    @Query("DELETE FROM amount_rules WHERE id = :id")
+    suspend fun deleteAmountRule(id: Long)
+
     @Insert
     suspend fun insertRule(r: CategoryRuleEntity): Long
 

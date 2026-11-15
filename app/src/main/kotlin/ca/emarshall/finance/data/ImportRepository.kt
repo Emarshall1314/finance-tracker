@@ -215,7 +215,7 @@ class ImportRepository @Inject constructor(
                 TransactionEntity(
                     accountId = p.account.id, date = k.tx.date, amountCents = k.tx.amountCents,
                     currency = k.tx.currency ?: p.account.currency, rawDescription = k.tx.description, merchant = merchant,
-                    categoryId = snap.categoryIdFor(k.tx.description, merchant, k.tx.amountCents),
+                    categoryId = snap.categoryIdFor(k.tx.description, merchant, k.tx.amountCents, k.tx.date, useAmountRules = !p.account.typeEnum.isInvestment),
                     source = source.name, importBatchId = batchId, fingerprint = k.fingerprint, fitId = k.fitId,
                 )
             }

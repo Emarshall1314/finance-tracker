@@ -20,11 +20,11 @@ class Converters {
     entities = [
         AccountEntity::class, TransactionEntity::class, CategoryEntity::class, CategoryRuleEntity::class,
         ImportBatchEntity::class, CsvProfileEntity::class, BalanceSnapshotEntity::class, QtBalanceEntity::class,
-        QtPositionEntity::class, QtActivityEntity::class, ReminderEntity::class, GoalEntity::class,
+        QtPositionEntity::class, QtActivityEntity::class, ReminderEntity::class, GoalEntity::class, AmountRuleEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
-    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3)],
+    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4)],
 )
 @TypeConverters(Converters::class)
 abstract class FinanceDatabase : RoomDatabase() {

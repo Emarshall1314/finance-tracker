@@ -22,6 +22,9 @@ for what each bank's files look like.
   PDF statements are checked against their own opening/closing totals.
 - **Categorise** automatically with rules for common BC and Canadian merchants. Recategorise a
   transaction and choose "Always do this for <merchant>" to teach it.
+- **Known payments** (Settings → Known payments, or "I pay this amount regularly" on a transaction):
+  "Rent, $1,800, around the 1st" makes every payment of that amount Rent, even an e-Transfer whose
+  description says nothing. Transfers and categories you picked by hand are never changed.
 - **Transfers** between your own accounts (card payments, deposits to Questrade) are paired and never
   counted as income or spending.
 - **Bills & subscriptions**: recurring monthly charges with their cost and next date.

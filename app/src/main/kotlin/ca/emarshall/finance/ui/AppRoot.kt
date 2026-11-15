@@ -89,6 +89,9 @@ import kotlin.reflect.KClass
 @Serializable data class ClaudeChatRoute(val prompt: String = "")
 @Serializable object ClaudeSetupRoute
 @Serializable data class CategoryRoute(val categoryId: Long, val month: String)
+@Serializable object KnownPaymentsRoute
+/** [amountCents] and [day] prefill a new one (from a transaction). */
+@Serializable data class KnownPaymentEditRoute(val id: Long = -1, val amountCents: Long = 0, val day: Int = 0)
 
 sealed interface PendingNav {
     data class ImportFiles(val uris: List<String>) : PendingNav
@@ -189,6 +192,8 @@ fun AppRoot(
             composable<ClaudeChatRoute> { ClaudeChatScreen(nav) }
             composable<ClaudeSetupRoute> { ClaudeSetupScreen(nav) }
             composable<CategoryRoute> { ca.emarshall.finance.ui.categories.CategoryDetailScreen(nav) }
+            composable<KnownPaymentsRoute> { ca.emarshall.finance.ui.categories.KnownPaymentsScreen(nav) }
+            composable<KnownPaymentEditRoute> { ca.emarshall.finance.ui.categories.KnownPaymentEditScreen(nav) }
         }
     }
 }

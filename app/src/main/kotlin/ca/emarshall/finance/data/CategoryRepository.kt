@@ -1,7 +1,9 @@
 package ca.emarshall.finance.data
 
 import androidx.room.withTransaction
+import ca.emarshall.finance.core.categorize.AmountRule
 import ca.emarshall.finance.core.categorize.Categorizer
+import ca.emarshall.finance.data.db.AmountRuleEntity
 import ca.emarshall.finance.core.categorize.DefaultCategories
 import ca.emarshall.finance.core.categorize.MatchType
 import ca.emarshall.finance.core.categorize.Rule
@@ -24,8 +26,9 @@ val CategoryEntity.kindEnum: CategoryKind get() = runCatching { CategoryKind.val
 
 /** Categorizer plus lookups between category keys and database ids. */
 class CategorizerSnapshot(val categorizer: Categorizer, private val byKey: Map<String, CategoryEntity>) {
-    fun categoryIdFor(raw: String, merchant: String, amountCents: Long): Long? =
-        byKey[categorizer.categorize(raw, merchant, amountCents)]?.id
+    /** [useAmountRules] is false for investment accounts: "rent is $1,800" never applies inside Questrade. */
+    fun categoryIdFor(raw: String, merchant: String, amountCents: Long, date: java.time.LocalDate? = null, useAmountRules: Boolean = true): Long? =
+        byKey[categorizer.categorize(raw, merchant, amountCents, date, useAmountRules)]?.id
     fun idOf(key: String): Long? = byKey[key]?.id
 }
 
@@ -37,6 +40,7 @@ class CategoryRepository @Inject constructor(
 ) {
     val categories: Flow<List<CategoryEntity>> = dao.observeAll()
     val rules: Flow<List<CategoryRuleEntity>> = dao.observeRules()
+    val amountRules: Flow<List<AmountRuleEntity>> = dao.observeAmountRules()
     private val seedLock = Mutex()
 
     /** Inserts the default categories and seed rules the first time. */
@@ -63,7 +67,12 @@ class CategoryRepository @Inject constructor(
             val cat = byId[r.categoryId] ?: return@mapNotNull null
             Rule(r.id, r.pattern, runCatching { MatchType.valueOf(r.matchType) }.getOrDefault(MatchType.CONTAINS), cat.ruleKey, r.priority, r.learned, r.amountSign)
         }
-        return CategorizerSnapshot(Categorizer(rules), cats.associateBy { it.ruleKey })
+        val amountRules = dao.amountRules().mapNotNull { r ->
+            val cat = byId[r.categoryId] ?: return@mapNotNull null
+            AmountRule(r.id, r.name, r.amountCents, cat.ruleKey, r.toleranceCents, r.dayOfMonth)
+        }
+        val transferKeys = cats.filter { it.kindEnum == CategoryKind.TRANSFER }.map { it.ruleKey }.toSet()
+        return CategorizerSnapshot(Categorizer(rules, amountRules, transferKeys), cats.associateBy { it.ruleKey })
     }
 
     /**
@@ -86,14 +95,48 @@ class CategoryRepository @Inject constructor(
 
     suspend fun deleteRule(id: Long) = dao.deleteRule(id)
 
+    /**
+     * Saves a known payment ("Rent, $1,800, around the 1st") and applies it to past transactions. With
+     * [newCategoryName] a new spending category of that name is made for it. Returns how many past payments match.
+     */
+    suspend fun saveAmountRule(rule: AmountRuleEntity, newCategoryName: String?): Int {
+        val categoryId = newCategoryName?.trim()?.takeIf { it.isNotEmpty() }?.let { name ->
+            dao.all().firstOrNull { it.name.equals(name, ignoreCase = true) && it.kindEnum == CategoryKind.EXPENSE }?.id
+                ?: addCategory(name, CategoryKind.EXPENSE, NEW_CATEGORY_COLORS[(name.lowercase().hashCode() and 0x7fffffff) % NEW_CATEGORY_COLORS.size])
+        } ?: rule.categoryId
+        val id = dao.upsertAmountRule(rule.copy(categoryId = categoryId)).let { if (it == -1L) rule.id else it }
+        recategorizeAll()
+        val snap = snapshot()
+        val investment = investmentAccountIds()
+        return txDao.all().count { t ->
+            t.accountId !in investment && !t.categoryLocked && t.transferLinkId == null &&
+                snap.categorizer.amountRuleFor(t.rawDescription, t.merchant, t.amountCents, t.date)?.id == id
+        }
+    }
+
+    suspend fun amountRule(id: Long): AmountRuleEntity? = dao.amountRule(id)
+
+    /** Removes a known payment; its transactions go back to what the text rules say. */
+    suspend fun deleteAmountRule(id: Long) {
+        dao.deleteAmountRule(id)
+        recategorizeAll()
+    }
+
+    private suspend fun investmentAccountIds(): Set<Long> =
+        db.accounts().all().filter { a -> runCatching { ca.emarshall.finance.core.model.AccountType.valueOf(a.type) }.getOrNull()?.isInvestment == true }
+            .map { it.id }.toSet()
+
     /** Re-runs the rules over every transaction whose category the user didn't pick by hand. */
     suspend fun recategorizeAll(): Int {
         val snap = snapshot()
+        val investment = investmentAccountIds()
         val changed = txDao.all().filter { !it.categoryLocked && it.transferLinkId == null }.mapNotNull { t ->
-            val id = snap.categoryIdFor(t.rawDescription, t.merchant, t.amountCents)
+            val id = snap.categoryIdFor(t.rawDescription, t.merchant, t.amountCents, t.date, useAmountRules = t.accountId !in investment)
             if (id != null && id != t.categoryId) t.copy(categoryId = id) else null
         }
         if (changed.isNotEmpty()) txDao.updateAll(changed)
         return changed.size
     }
 }
+
+private val NEW_CATEGORY_COLORS = listOf(0xFF6D4C41, 0xFF00796B, 0xFF5D4037, 0xFF3949AB, 0xFFAD1457, 0xFF00838F)

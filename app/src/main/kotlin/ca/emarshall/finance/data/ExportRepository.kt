@@ -113,6 +113,12 @@ class ExportRepository @Inject constructor(
                     put("priority", r.priority); put("learned", r.learned); put("amountSign", r.amountSign)
                 }
             }))
+            put("knownPayments", arr(db.categories().amountRules().map { r ->
+                buildJsonObject {
+                    put("name", r.name); put("amountCents", r.amountCents); put("toleranceCents", r.toleranceCents)
+                    put("categoryId", r.categoryId); put("dayOfMonth", r.dayOfMonth)
+                }
+            }))
             put("transactions", arr(db.transactions().all().map { t ->
                 buildJsonObject {
                     put("id", t.id); put("accountId", t.accountId); put("date", t.date.toString()); put("amountCents", t.amountCents)

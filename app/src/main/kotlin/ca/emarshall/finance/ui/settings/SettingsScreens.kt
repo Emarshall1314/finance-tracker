@@ -14,6 +14,7 @@ import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Description
@@ -108,6 +109,7 @@ fun SettingsScreen(nav: NavController, vm: SettingsViewModel = hiltViewModel()) 
         item {
             ca.emarshall.finance.ui.design.Group {
                 Row("Categories & rules", Icons.Default.Category, p.chart[1]) { nav.navigate(CategoriesRoute) }
+                Row("Known payments", Icons.Default.Home, p.chart[0], "Rent and other amounts you pay regularly") { nav.navigate(ca.emarshall.finance.ui.KnownPaymentsRoute) }
                 Row("Bills & subscriptions", Icons.Default.Autorenew, p.chart[3]) { nav.navigate(BillsRoute) }
                 Row("Statement reminders", Icons.Default.Notifications, Color(0xFFFF3B30), last = true) { nav.navigate(RemindersRoute) }
             }

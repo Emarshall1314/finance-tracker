@@ -16,7 +16,15 @@ data class Rule(
     val amountSign: Int = 0,
 )
 
-class Categorizer(rules: List<Rule>) {
+/**
+ * [amountRules] ("rent is $1,800 a month") beat text rules, except where the text says it's a transfer:
+ * category keys in [transferKeys] (card payments, Questrade deposits) are never overridden by an amount.
+ */
+class Categorizer(
+    rules: List<Rule>,
+    private val amountRules: List<AmountRule> = emptyList(),
+    private val transferKeys: Set<String> = DefaultCategories.ALL.filter { it.kind == ca.emarshall.finance.core.model.CategoryKind.TRANSFER }.map { it.key }.toSet(),
+) {
     private val compiled = rules.sortedWith(compareByDescending<Rule> { it.priority }.thenByDescending { it.pattern.length })
         .map { r ->
             val re = when (r.matchType) {
@@ -26,10 +34,22 @@ class Categorizer(rules: List<Rule>) {
             r to re
         }
 
-    /** Returns the category key for a transaction, falling back to Other / Other Income. */
-    fun categorize(rawDescription: String, merchant: String, amountCents: Long): String =
-        match(rawDescription, merchant, amountCents)?.categoryKey
-            ?: if (amountCents >= 0) DefaultCategories.FALLBACK_INCOME else DefaultCategories.FALLBACK_EXPENSE
+    /**
+     * Returns the category key for a transaction, falling back to Other / Other Income. [date] lets amount
+     * rules check the day of the month; [useAmountRules] is false for investment accounts.
+     */
+    fun categorize(rawDescription: String, merchant: String, amountCents: Long, date: java.time.LocalDate? = null, useAmountRules: Boolean = true): String {
+        val text = match(rawDescription, merchant, amountCents)?.categoryKey
+        if (useAmountRules) amountRule(text, amountCents, date)?.let { return it.categoryKey }
+        return text ?: if (amountCents >= 0) DefaultCategories.FALLBACK_INCOME else DefaultCategories.FALLBACK_EXPENSE
+    }
+
+    /** The amount rule that decides this payment's category, if one does. */
+    fun amountRuleFor(rawDescription: String, merchant: String, amountCents: Long, date: java.time.LocalDate?): AmountRule? =
+        amountRule(match(rawDescription, merchant, amountCents)?.categoryKey, amountCents, date)
+
+    private fun amountRule(textKey: String?, amountCents: Long, date: java.time.LocalDate?): AmountRule? =
+        if (amountRules.isEmpty()) null else AmountRules.find(amountRules, amountCents, date, textKey != null && textKey in transferKeys)
 
     fun match(rawDescription: String, merchant: String, amountCents: Long): Rule? {
         val hay = (rawDescription + " | " + merchant).uppercase()
