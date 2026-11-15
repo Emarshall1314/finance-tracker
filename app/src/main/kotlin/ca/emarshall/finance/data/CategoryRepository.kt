@@ -52,37 +52,29 @@ class CategoryRepository @Inject constructor(
 
     @Volatile private var builtInsChecked = false
 
-    /** Inserts the default categories and seed rules the first time, and built-in categories added in later versions. */
+    /**
+     * Makes sure the built-in categories exist (the first time, and when a new version adds some). The
+     * built-in rules live in code ([SeedRules]); copies that older versions stored in the database are removed.
+     */
     suspend fun ensureSeeded() = seedLock.withLock {
-        if (dao.count() > 0) {
-            if (!builtInsChecked) {
-                // Unique key: existing ones are ignored, new built-ins (e.g. To/From Savings) are added.
-                dao.insertAll(DefaultCategories.ALL.map { CategoryEntity(key = it.key, name = it.name, kind = it.kind.name, icon = it.icon, color = it.color, builtIn = true) })
-                builtInsChecked = true
-            }
-            return@withLock
-        }
+        if (builtInsChecked && dao.count() > 0) return@withLock
         db.withTransaction {
+            // Unique key: existing ones are ignored, new built-ins (e.g. To/From Savings) are added.
             dao.insertAll(DefaultCategories.ALL.map { CategoryEntity(key = it.key, name = it.name, kind = it.kind.name, icon = it.icon, color = it.color, builtIn = true) })
-            val ids = dao.all().associate { (it.key ?: "") to it.id }
-            dao.insertRules(
-                SeedRules.ALL.mapNotNull { r ->
-                    ids[r.categoryKey]?.let { cid ->
-                        CategoryRuleEntity(pattern = r.pattern, matchType = r.matchType.name, categoryId = cid, priority = r.priority, learned = false, amountSign = r.amountSign)
-                    }
-                },
-            )
+            dao.deleteStoredSeedRules()
         }
+        builtInsChecked = true
     }
 
     suspend fun snapshot(): CategorizerSnapshot {
         ensureSeeded()
         val cats = dao.all()
         val byId = cats.associateBy { it.id }
-        val rules = dao.rules().mapNotNull { r ->
+        val mine = dao.rules().mapNotNull { r ->
             val cat = byId[r.categoryId] ?: return@mapNotNull null
             Rule(r.id, r.pattern, runCatching { MatchType.valueOf(r.matchType) }.getOrDefault(MatchType.CONTAINS), cat.ruleKey, r.priority, r.learned, r.amountSign)
         }
+        val rules = SeedRules.ALL + mine
         val amountRules = dao.amountRules().mapNotNull { r ->
             val cat = byId[r.categoryId] ?: return@mapNotNull null
             AmountRule(r.id, r.name, r.amountCents, cat.ruleKey, r.toleranceCents, r.dayOfMonth)
@@ -96,7 +88,9 @@ class CategoryRepository @Inject constructor(
      * transactions from that merchant too. Returns how many transactions changed.
      */
     suspend fun learn(merchant: String, categoryId: Long): Int = db.withTransaction {
-        dao.insertRule(CategoryRuleEntity(pattern = merchant, matchType = MatchType.CONTAINS.name, categoryId = categoryId, priority = 1000, learned = true))
+        // Exact merchant: "always do this for Uber" must not also catch Uber Eats. A newer choice replaces an older one.
+        dao.deleteLearnedFor(merchant)
+        dao.insertRule(CategoryRuleEntity(pattern = merchant, matchType = MatchType.MERCHANT.name, categoryId = categoryId, priority = 1000, learned = true))
         txDao.setCategoryForMerchant(merchant, categoryId)
     }
 
@@ -104,7 +98,17 @@ class CategoryRepository @Inject constructor(
         dao.insert(CategoryEntity(name = name.trim(), kind = kind.name, icon = "label", color = color, builtIn = false))
 
     suspend fun rename(c: CategoryEntity, name: String) = dao.update(c.copy(name = name.trim()))
-    suspend fun deleteCategory(id: Long) = dao.deleteCustom(id)
+    /** Deletes one of the user's categories; its transactions go back to what the rules say. */
+    suspend fun deleteCategory(id: Long) {
+        db.withTransaction {
+            if (dao.all().none { it.id == id && !it.builtIn }) return@withTransaction
+            txDao.clearCategory(id)
+            dao.deleteCustom(id)
+        }
+        recategorizeAll()
+    }
+
+
 
     suspend fun addRule(pattern: String, regex: Boolean, categoryId: Long, priority: Int = 500) =
         dao.insertRule(CategoryRuleEntity(pattern = pattern, matchType = (if (regex) MatchType.REGEX else MatchType.CONTAINS).name, categoryId = categoryId, priority = priority, learned = false))
@@ -141,6 +145,25 @@ class CategoryRepository @Inject constructor(
     private suspend fun investmentAccountIds(): Set<Long> =
         db.accounts().all().filter { a -> runCatching { ca.emarshall.finance.core.model.AccountType.valueOf(a.type) }.getOrNull()?.isInvestment == true }
             .map { it.id }.toSet()
+
+    /**
+     * Cleans every imported transaction's merchant name again from the bank's description, for when the
+     * cleaner has improved ("Tst-breka Bakery &" becomes "Breka Bakery"). Questrade rows keep their labels.
+     */
+    suspend fun recleanMerchants(): Int {
+        val changed = txDao.all().filter { it.source != ca.emarshall.finance.core.model.TxSource.QUESTRADE.name }.mapNotNull { t ->
+            val clean = ca.emarshall.finance.core.categorize.MerchantCleaner.clean(t.rawDescription)
+            if (clean != t.merchant) t.copy(merchant = clean) else null
+        }
+        if (changed.isEmpty()) return 0
+        val old = txDao.all().associate { it.id to it.merchant }
+        db.withTransaction {
+            txDao.updateAll(changed)
+            // "Always do this for <merchant>" rules follow the merchant to its new name.
+            changed.map { old.getValue(it.id) to it.merchant }.distinct().forEach { (from, to) -> dao.renameMerchantRule(from, to) }
+        }
+        return changed.size
+    }
 
     /** Re-runs the rules over every transaction whose category the user didn't pick by hand. */
     suspend fun recategorizeAll(): Int {

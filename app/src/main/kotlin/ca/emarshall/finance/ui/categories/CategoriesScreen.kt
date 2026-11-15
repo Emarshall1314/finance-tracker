@@ -91,6 +91,14 @@ fun CategoriesScreen(nav: NavController, vm: CategoriesViewModel = hiltViewModel
 
     DetailScreen("Categories & rules", onBack = { nav.popBackStack() }) {
         message?.let { m -> item { Notice(m, NoticeTone.SUCCESS) } }
+        item {
+            Group {
+                GroupRow("Sort out Other", subtitle = "Give the places the app didn't recognise a category", icon = Icons.Outlined.Rule, iconColor = p.chart[1],
+                    showChevron = true, onClick = { nav.navigate(ca.emarshall.finance.ui.SortOtherRoute) })
+                GroupRow("Known payments", subtitle = "Rent and other amounts you pay regularly", icon = Icons.Outlined.Refresh, iconColor = p.chart[0],
+                    showChevron = true, divider = false, onClick = { nav.navigate(ca.emarshall.finance.ui.KnownPaymentsRoute) })
+            }
+        }
         CategoryKind.entries.forEach { k ->
             val inKind = cats.filter { it.kind == k.name }
             if (inKind.isEmpty()) return@forEach
@@ -151,10 +159,19 @@ fun CategoriesScreen(nav: NavController, vm: CategoriesViewModel = hiltViewModel
             }
         }
         if (showSeed) {
-            item {
-                val seed = rules.filter { !it.learned && it.priority < 500 }
-                Group {
-                    seed.forEachIndexed { i, r -> GroupRow(r.pattern, subtitle = "→ ${byId[r.categoryId]?.name ?: "?"}", divider = i < seed.size - 1) }
+            // Built-in rules ship with the app: per category, the names and words it looks for.
+            val byKey = cats.associateBy { it.key }
+            val grouped = ca.emarshall.finance.core.categorize.SeedRules.ALL.groupBy { it.categoryKey }
+            item { ca.emarshall.finance.ui.design.Footnote("${ca.emarshall.finance.core.categorize.SeedRules.ALL.size} built-in rules. Your own rules and known payments always win over these.") }
+            grouped.forEach { (key, list) ->
+                item(key = "seed-$key") {
+                    FinCard {
+                        Text("${byKey[key]?.name ?: key} · ${list.size}", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            list.joinToString(", ") { it.pattern.lowercase() },
+                            style = MaterialTheme.typography.bodySmall, color = p.secondaryLabel,
+                        )
+                    }
                 }
             }
         }

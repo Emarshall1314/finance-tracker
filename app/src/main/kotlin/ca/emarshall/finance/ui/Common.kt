@@ -23,7 +23,14 @@ import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.CreditCard
+import androidx.compose.material.icons.filled.FitnessCenter
+import androidx.compose.material.icons.filled.Gavel
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.LocalBar
+import androidx.compose.material.icons.filled.Pets
+import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.DirectionsBus
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Flight
@@ -223,6 +230,13 @@ fun categoryIcon(name: String?): ImageVector = when (name) {
     "swap_horiz" -> Icons.Default.SwapHoriz
     "account_balance" -> Icons.Default.AccountBalance
     "category" -> Icons.Default.Category
+    "content_cut" -> Icons.Default.ContentCut
+    "pets" -> Icons.Default.Pets
+    "fitness_center" -> Icons.Default.FitnessCenter
+    "local_bar" -> Icons.Default.LocalBar
+    "school" -> Icons.Default.School
+    "gavel" -> Icons.Default.Gavel
+    "home" -> Icons.Default.Home
     else -> Icons.Default.Label
 }
 

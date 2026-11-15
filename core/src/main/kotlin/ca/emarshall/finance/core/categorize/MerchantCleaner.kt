@@ -17,7 +17,6 @@ object MerchantCleaner {
         Regex("^CREDIT CARD/LOC PAYMENT") to "Credit card payment",
         Regex("^IO TRANSFER TO INV") to "Transfer to investments",
         Regex("^(IO|MB|PC)[- ]TRANSFER (TO|FROM)") to "Transfer between my accounts",
-        Regex("^CUSTOMER TRANSFER") to "Transfer between my accounts",
         Regex("^WITHDRAWAL\\b.*INTERAC E-TRANSFER") to "Interac e-Transfer sent",
         Regex("^DEPOSIT\\b.*INTERAC E-TRANSFER RTN") to "Interac e-Transfer returned",
         Regex("^DEPOSIT\\b.*INTERAC E-TRANSFER") to "Interac e-Transfer received",
@@ -37,8 +36,16 @@ object MerchantCleaner {
         "PRE-AUTH PAYMENT", "PREAUTHORIZED DEBIT", "PAD", "BILL PAYMENT", "MB-BILL PAYMENT", "PC-BILL PAYMENT",
         "MB BILL PAYMENT", "PC BILL PAYMENT", "MISC. PAYMENT", "MISC PAYMENT", "AUTO INSURANCE", "HYDRO BILL",
         "PAYROLL DEP.", "PAYROLL DEPOSIT", "ERROR CORRECTION", "CONTACTLESS", "RECURRING PAYMENT",
-        "SQ *", "SQ*", "TST*", "TST-", "PAYPAL *", "PP*", "SP *", "SP*", "IC*", "DD *", "DD*", "CKO*", "WWW ",
+        "CUSTOMER TRANSFER DR.", "CUSTOMER TRANSFER CR.", "TELEPHONE BILL", "CABLE BILL", "UTILITY BILL", "GAS BILL",
+        "MORTGAGE PAYMENT", "LOAN PAYMENT", "TAX PAYMENT", "BUSINESS TAXES", "RENT/LEASES",
+        // Payment processors that put their own tag in front of the shop's name.
+        "SQ *", "SQ*", "TST*", "TST-", "PAYPAL *", "PP*", "SP *", "SP*", "IC*", "DD *", "DD*", "CKO*", "WWW ", "LS ", "BT*", "CLV*",
+        "ZSK*", "OLO*", "WPY*", "PY *", "IN *", "FS *", "FSP*", "EB *", "SQSP*", "GLF*", "PAR*", "TCB*", "NYX*", "SPI*", "CTLP*", "PPL*",
     ).sortedByDescending { it.length }
+
+    /** Word prefixes need a space after them; tags ending in punctuation ("SQ *", "TST-") don't. */
+    private fun String.startsWithPrefix(p: String) =
+        if (p.last().isLetterOrDigit() || p.last() == '.') startsWith("$p ") else startsWith(p)
 
     private const val PROVINCES = "BC|AB|SK|MB|ON|QC|NB|NS|PE|NL|YT|NT|NU"
     private const val COUNTRIES = "CA|CAN|US|USA|IRL|GBR|FRA|DEU|ESP|ITA|NLD|PRT|JPN|MEX|AUS|NZL|CHE"
@@ -80,6 +87,22 @@ object MerchantCleaner {
         "BC FERRIES" to "BC Ferries", "FAMOUS PLAYER" to "Cineplex", "CINEPLEX" to "Cineplex", "MUJI" to "Muji",
         "ZARA" to "Zara", "DENNY'S" to "Denny's", "SUPER VALU" to "Super Valu", "BUY LOW FOODS" to "Buy-Low Foods",
         "WHOLE FOODS" to "Whole Foods", "QUESTRADE" to "Questrade", "PAYROLL" to "Payroll",
+        "DOORDASH" to "DoorDash", "SKIPTHEDISHES" to "SkipTheDishes", "SKIP THE DISHES" to "SkipTheDishes", "MCDONALD" to "McDonald's",
+        "WENDY'S" to "Wendy's", "WENDYS" to "Wendy's", "DAIRY QUEEN" to "Dairy Queen", "BOSTON PIZZA" to "Boston Pizza",
+        "CACTUS CLUB" to "Cactus Club", "PHARMASAVE" to "Pharmasave", "LIFELABS" to "LifeLabs", "PETSMART" to "PetSmart",
+        "SPORT CHEK" to "Sport Chek", "SPORTCHEK" to "Sport Chek", "LULULEMON" to "Lululemon", "UNIQLO" to "Uniqlo",
+        "HOMESENSE" to "HomeSense", "STAPLES" to "Staples", "IMPARK" to "Impark", "EASYPARK" to "EasyPark", "LYFT" to "Lyft",
+        "AIR CANADA" to "Air Canada", "WESTJET" to "WestJet", "AIRBNB" to "Airbnb", "YOUTUBE" to "YouTube", "OPENAI" to "OpenAI",
+        "GOOGLE ONE" to "Google One", "MICROSOFT" to "Microsoft", "KOODO" to "Koodo", "FIDO" to "Fido", "BELL MOBILITY" to "Bell",
+        "BELL CANADA" to "Bell", "PUBLIC MOBILE" to "Public Mobile", "BCAA" to "BCAA", "GOODLIFE" to "GoodLife Fitness",
+        "FRESHCO" to "FreshCo", "THRIFTY FOODS" to "Thrifty Foods", "H MART" to "H Mart", "HMART" to "H Mart", "KFC" to "KFC",
+        "POPEYES" to "Popeyes", "BURGER KING" to "Burger King", "FIVE GUYS" to "Five Guys", "CHIPOTLE" to "Chipotle",
+        "PANAGO" to "Panago", "PIZZA HUT" to "Pizza Hut", "BOOSTER JUICE" to "Booster Juice", "CIRCLE K" to "Circle K",
+        "HUSKY" to "Husky", "MOBIL" to "Mobil", "LORDCO" to "Lordco", "KAL TIRE" to "Kal Tire", "EVO CAR SHARE" to "Evo",
+        "MARSHALLS" to "Marshalls", "SEPHORA" to "Sephora", "ETSY" to "Etsy",
+        "EBAY" to "eBay", "TICKETMASTER" to "Ticketmaster", "PLAYSTATION" to "PlayStation", "NINTENDO" to "Nintendo",
+        "PATREON" to "Patreon", "DROPBOX" to "Dropbox", "ADOBE" to "Adobe", "AUDIBLE" to "Audible",
+        "EXPEDIA" to "Expedia", "BOOKING.COM" to "Booking.com", "CANADA POST" to "Canada Post", "RONA" to "Rona", "LOWE'S" to "Lowe's",
     ).map { (k, v) -> Regex("(^|[^A-Z0-9])" + Regex.escape(k) + "($|[^A-Z0-9])") to v }
 
     fun clean(raw: String): String {
@@ -88,7 +111,7 @@ object MerchantCleaner {
 
         // Bank prefixes can stack: "POINT OF SALE PURCHASE FPOS SQ *..."
         repeat(4) {
-            val p = PREFIXES.firstOrNull { p -> s.startsWith("$p ") || (p.endsWith("*") && s.startsWith(p)) } ?: return@repeat
+            val p = PREFIXES.firstOrNull { p -> s.startsWithPrefix(p) } ?: return@repeat
             s = s.removePrefix(p).trim()
         }
         // Province + country glued at the end ("VANCOUVER BCCA", "RIDGEBCCA"), then glued cities.
@@ -106,9 +129,22 @@ object MerchantCleaner {
             .replace(Regex("[*#]+"), " ")
             .replace(Regex("\\s+"), " ")
             .trim()
+            // Names cut off at the bank's column width end mid-phrase: "BREKA BAKERY &", "JOE'S BAR AND".
+            .replace(Regex("(\\s+(&|AND|-|/|\\+))+$"), "")
+            .trim()
         if (s.isEmpty()) s = raw.trim()
         return titleCase(s)
     }
+
+    private val ANY_GLUED_CITY = Regex("([A-Z0-9'&.])(" + CITIES.joinToString("|") { Regex.escape(it) } + ")\\b")
+    private val GLUED_PROVINCE = Regex("($PROVINCES)CA\\b")
+
+    /**
+     * For matching only: [upper] with province codes and every known city split off the word they were
+     * glued to ("COFFEEDELTA BCCA" -> "COFFEE DELTA BC"). Unlike [clean] it splits short city names too,
+     * because a wrong split here can only add a word to match, never spoil a displayed name.
+     */
+    fun deglue(upper: String): String = upper.replace(GLUED_PROVINCE, " $1").replace(ANY_GLUED_CITY, "$1 $2")
 
     private fun titleCase(s: String): String = s.lowercase().split(" ").joinToString(" ") { w ->
         if (w.uppercase() in setOf("BC", "ICBC", "ATM", "IGA", "USA", "UBC", "SFU")) w.uppercase()

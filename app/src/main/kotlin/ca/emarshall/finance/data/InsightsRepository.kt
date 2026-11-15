@@ -63,11 +63,15 @@ class InsightsRepository @Inject constructor(
 data class GoalView(val entity: GoalEntity, val progress: GoalProgress)
 
 @Singleton
-class GoalRepository @Inject constructor(private val db: FinanceDatabase, private val transactions: TransactionRepository) {
-    val goals: Flow<List<GoalView>> = combine(db.goals().observeActive(), transactions.rows) { goals, rows ->
+class GoalRepository @Inject constructor(
+    private val db: FinanceDatabase,
+    private val transactions: TransactionRepository,
+    statements: StatementsRepository,
+) {
+    val goals: Flow<List<GoalView>> = combine(db.goals().observeActive(), transactions.rows, statements.latestUnlocked) { goals, rows, latest ->
         val facts = rows.map { it.toFact() }
         val today = LocalDate.now()
-        goals.map { g -> GoalView(g, GoalTracker.progress(g.toCore(), facts, today)) }
+        goals.map { g -> GoalView(g, GoalTracker.progress(g.toCore(), facts, today, latest)) }
     }
 
     suspend fun save(g: GoalEntity): Long = db.goals().upsert(g)

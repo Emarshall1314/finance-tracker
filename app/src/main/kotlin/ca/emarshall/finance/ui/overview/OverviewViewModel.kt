@@ -21,6 +21,7 @@ import ca.emarshall.finance.data.db.FinanceDatabase
 import ca.emarshall.finance.data.latestBalances
 import ca.emarshall.finance.data.ruleKey
 import ca.emarshall.finance.data.toFacts
+import ca.emarshall.finance.ui.categories.unsortedMerchants
 import ca.emarshall.finance.data.typeEnum
 import ca.emarshall.finance.data.institutionEnum
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -80,6 +81,9 @@ data class OverviewState(
     /** Year to date (Jan 1 to the end of [completeThrough]): spending by category, for the donut. */
     val ytd: List<Pair<CategoryTotal, Long?>> = emptyList(),
     val ytdYear: Int = LocalDate.now().year,
+    /** Places whose payments the rules left in "Other", and what they add up to. */
+    val unsortedPlaces: Int = 0,
+    val unsortedCents: Long = 0,
 )
 
 @HiltViewModel
@@ -131,6 +135,7 @@ class OverviewViewModel @Inject constructor(
         val latestTx = b.rows.groupBy { it.accountId }.mapValues { (_, l) -> l.maxOf { it.date } }
         val latestBalance = b.balances.groupBy { it.accountId }.mapValues { (_, l) -> l.maxOf { it.date } }
         val bills = transactions.recurring(b.rows, today)
+        val unsorted = b.rows.unsortedMerchants()
         OverviewState(
             loading = false,
             checklist = Checklist(
@@ -174,6 +179,8 @@ class OverviewViewModel @Inject constructor(
                 ?.let { it.name to ca.emarshall.finance.core.statements.MonthCompleteness.nextClose(it) },
             ytd = a.spendingByCategory(LocalDate.of(last.year, 1, 1), last.atEndOfMonth()).map { it to catIdByKey[it.categoryKey] },
             ytdYear = last.year,
+            unsortedPlaces = unsorted.size,
+            unsortedCents = unsorted.sumOf { it.cents },
         )
     }.flowOn(kotlinx.coroutines.Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), OverviewState())

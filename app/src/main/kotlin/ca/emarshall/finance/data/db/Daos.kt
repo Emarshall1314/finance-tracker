@@ -104,7 +104,7 @@ interface TransactionDao {
           AND t.date BETWEEN :from AND :to
           AND (:q = '' OR t.merchant LIKE '%' || :q || '%' OR t.rawDescription LIKE '%' || :q || '%' OR t.notes LIKE '%' || :q || '%')
         ORDER BY t.date DESC, t.id DESC
-        LIMIT 2000""",
+        LIMIT 20000""",
     )
     fun search(accountId: Long?, categoryId: Long?, from: LocalDate, to: LocalDate, q: String): Flow<List<TxRow>>
 
@@ -138,11 +138,17 @@ interface TransactionDao {
     @Query("UPDATE transactions SET categoryId = :categoryId WHERE LOWER(merchant) = LOWER(:merchant) AND transferLinkId IS NULL")
     suspend fun setCategoryForMerchant(merchant: String, categoryId: Long): Int
 
+    @Query("UPDATE transactions SET categoryId = NULL, categoryLocked = 0 WHERE categoryId = :categoryId")
+    suspend fun clearCategory(categoryId: Long)
+
     @Query("UPDATE transactions SET notes = :notes WHERE id = :id")
     suspend fun setNotes(id: Long, notes: String?)
 
     @Query("UPDATE transactions SET transferLinkId = :linkId, transferLocked = :locked WHERE id = :id")
     suspend fun setTransferLink(id: Long, linkId: Long?, locked: Boolean)
+
+    @Query("UPDATE transactions SET transferLinkId = NULL WHERE transferLocked = 0 AND transferLinkId IS NOT NULL")
+    suspend fun unlinkUnconfirmedTransfers()
 
     @Query("DELETE FROM transactions WHERE importBatchId = :batchId")
     suspend fun deleteBatch(batchId: Long): Int
@@ -215,6 +221,16 @@ interface CategoryDao {
     @Query("DELETE FROM category_rules WHERE id = :id")
     suspend fun deleteRule(id: Long)
 
+    /** Built-in rules used to be copied into this table (never learned, priority under 500); they live in code now. */
+    @Query("DELETE FROM category_rules WHERE learned = 0 AND priority < 500")
+    suspend fun deleteStoredSeedRules()
+
+    @Query("UPDATE category_rules SET pattern = :to WHERE matchType = 'MERCHANT' AND LOWER(pattern) = LOWER(:from)")
+    suspend fun renameMerchantRule(from: String, to: String)
+
+    @Query("DELETE FROM category_rules WHERE learned = 1 AND LOWER(pattern) = LOWER(:merchant)")
+    suspend fun deleteLearnedFor(merchant: String)
+
     @Query("SELECT COUNT(*) FROM categories")
     suspend fun count(): Int
 }
@@ -260,7 +276,11 @@ interface ImportDao {
 
 @Dao
 interface BalanceDao {
-    @Upsert
+    /**
+     * One balance per account, day and currency. REPLACE, not @Upsert: an upsert only looks at the primary
+     * key, so a newer balance for the same day (a second Questrade sync, an overlapping statement) was dropped.
+     */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(rows: List<BalanceSnapshotEntity>)
 
     @Query("SELECT * FROM balance_snapshots ORDER BY date")

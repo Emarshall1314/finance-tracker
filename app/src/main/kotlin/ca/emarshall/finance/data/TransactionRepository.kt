@@ -83,8 +83,13 @@ class TransactionRepository @Inject constructor(
     suspend fun setNotes(id: Long, notes: String?) = dao.setNotes(id, notes?.trim()?.ifEmpty { null })
 
     /** Bills & subscriptions: recurring money out, excluding transfers. */
-    fun recurring(rows: List<TxRow>, today: LocalDate): List<RecurringSeries> =
-        RecurringDetector.detect(rows.filter { !it.isTransfer }.map { RecurringInput(it.id, it.date, it.amountCents, it.merchant, it.currency) }, today)
+    fun recurring(rows: List<TxRow>, today: LocalDate): List<RecurringSeries> {
+        val through = rows.groupBy { it.accountId }.mapValues { (_, l) -> l.maxOf { it.date } }
+        return RecurringDetector.detect(
+            rows.filter { !it.isTransfer }.map { RecurringInput(it.id, it.date, it.amountCents, it.merchant, it.currency, through[it.accountId]) },
+            today,
+        )
+    }
 
     /**
      * Pairs transfers between my accounts (card payments, moves to Questrade) and gives both sides a
@@ -94,7 +99,16 @@ class TransactionRepository @Inject constructor(
         val all = dao.all()
         val accounts = accountDao.all().associateBy { it.id }
         val candidates = all.filter { it.transferLinkId == null && !it.transferLocked }
-            .map { TransferCandidate(it.id, it.accountId, it.date, it.amountCents, it.currency, it.rawDescription) }
+            .map { t ->
+                val type = accounts[t.accountId]?.typeEnum
+                val kind = when {
+                    type == null -> ca.emarshall.finance.core.analytics.AccountKind.BANK
+                    type.isLiability -> ca.emarshall.finance.core.analytics.AccountKind.CARD
+                    type.isInvestment -> ca.emarshall.finance.core.analytics.AccountKind.INVESTMENT
+                    else -> ca.emarshall.finance.core.analytics.AccountKind.BANK
+                }
+                TransferCandidate(t.id, t.accountId, t.date, t.amountCents, t.currency, t.rawDescription, kind = kind)
+            }
         val pairs = TransferMatcher.match(candidates)
         if (pairs.isEmpty()) return@withTransaction 0
         val snap = categories.snapshot()
@@ -114,6 +128,16 @@ class TransactionRepository @Inject constructor(
             dao.update(inn.copy(transferLinkId = out.id, categoryId = if (inn.categoryLocked) inn.categoryId else catId ?: inn.categoryId))
         }
         pairs.size
+    }
+
+    /**
+     * Pairs every transfer again from scratch (pairs the user confirmed or unlinked stay as they are).
+     * For after the pairing rules change: older versions paired any two equal amounts.
+     */
+    suspend fun repairTransfers() {
+        dao.unlinkUnconfirmedTransfers()
+        categories.recategorizeAll()
+        rematchTransfers()
     }
 
     /** Keep this pair: automatic matching won't touch it again. */

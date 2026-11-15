@@ -44,14 +44,20 @@ data class GoalProgress(
 /** Progress for each goal, computed on the phone from the same numbers as the dashboard (CAD, no transfers). */
 object GoalTracker {
 
-    fun progress(goal: Goal, facts: List<TxFact>, today: LocalDate): GoalProgress {
+    /**
+     * [latestMonth] is the newest month the statements cover. Data arrives a statement at a time, so
+     * monthly goals are judged on that month, not on a calendar month that has no transactions yet.
+     */
+    fun progress(goal: Goal, facts: List<TxFact>, today: LocalDate, latestMonth: YearMonth? = null): GoalProgress {
         val a = Analytics(facts)
         return when (goal.type) {
             GoalType.SAVE_AMOUNT -> saveAmount(goal, a, today)
-            GoalType.SPEND_LIMIT -> spendLimit(goal, a, today)
-            GoalType.SAVINGS_RATE -> savingsRate(goal, a, today)
+            GoalType.SPEND_LIMIT -> spendLimit(goal, a, today, latestMonth)
+            GoalType.SAVINGS_RATE -> savingsRate(goal, a, today, latestMonth)
         }
     }
+
+    private fun name(m: YearMonth) = m.month.name.lowercase().replaceFirstChar { it.uppercase() }
 
     private fun saveAmount(g: Goal, a: Analytics, today: LocalDate): GoalProgress {
         val target = (g.targetCents ?: 0).coerceAtLeast(1)
@@ -89,11 +95,22 @@ object GoalTracker {
         )
     }
 
-    private fun spendLimit(g: Goal, a: Analytics, today: LocalDate): GoalProgress {
+    private fun spendLimit(g: Goal, a: Analytics, today: LocalDate, latestMonth: YearMonth?): GoalProgress {
         val limit = (g.targetCents ?: 0).coerceAtLeast(1)
-        val month = YearMonth.from(today)
+        val current = YearMonth.from(today)
+        val month = latestMonth?.takeIf { it < current } ?: current
         val spent = a.spendingByCategory(month).firstOrNull { it.categoryKey == g.categoryKey }?.cents ?: 0
         val pct = (spent * 100 / limit).toInt()
+        if (month < current) {
+            // A finished month from the statements: it either stayed under the limit or it didn't.
+            val before = a.spendingByCategory(month.minusMonths(1)).firstOrNull { it.categoryKey == g.categoryKey }?.cents ?: 0
+            return GoalProgress(
+                g, if (spent > limit) GoalStatus.OFF_TRACK else GoalStatus.ON_TRACK, pct,
+                "${Money.formatWhole(spent)} of ${Money.formatWhole(limit)} in ${name(month)}",
+                (if (spent > limit) "Over by ${Money.formatWhole(spent - limit)}." else "Under by ${Money.formatWhole(limit - spent)}.") +
+                    " ${name(month.minusMonths(1))}: ${Money.formatWhole(before)}.",
+            )
+        }
         // Pace: how much of the month has passed vs how much of the limit is used.
         val monthPct = today.dayOfMonth * 100 / month.lengthOfMonth()
         val status = when {
@@ -110,9 +127,9 @@ object GoalTracker {
         )
     }
 
-    private fun savingsRate(g: Goal, a: Analytics, today: LocalDate): GoalProgress {
+    private fun savingsRate(g: Goal, a: Analytics, today: LocalDate, latestMonth: YearMonth?): GoalProgress {
         val target = g.targetPercent ?: 0
-        val lastFull = YearMonth.from(today).minusMonths(1)
+        val lastFull = latestMonth?.takeIf { it < YearMonth.from(today) } ?: YearMonth.from(today).minusMonths(1)
         val months = (0L until 3L).map { a.monthTotals(lastFull.minusMonths(it)) }.filter { it.incomeCents > 0 }
         val income = months.sumOf { it.incomeCents }
         val rate = if (income > 0) Math.round(months.sumOf { it.netCents } * 100.0 / income).toInt() else null

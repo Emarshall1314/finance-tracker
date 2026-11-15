@@ -274,3 +274,14 @@ Requested by the owner after the first build:
   statements it's waiting on. Insights and the AI summary still use only months every account covers.
 - **Income from bank accounts only.** Card refunds reduce spending; activity inside investment accounts is
   neither income nor spending.
+- **Known payments.** "Rent, $1,800, around the 1st": every payment of that amount gets that category,
+  whatever the bank's description says. Never overrides a transfer or a category picked by hand.
+- **Put away.** Money moved from chequing to savings (a transfer not matched to another tracked account)
+  or to investments is shown per month, separately from spending.
+- **Everything follows the statements, not the calendar.** Data arrives a statement at a time, so bills,
+  goals, insights and Activity's "month" all work from the newest data on file: a bill isn't cancelled,
+  and a paycheque isn't late, just because the statement that would show it hasn't been imported.
+- **Transfers must make sense.** Two equal amounts are only paired as a transfer when the money could
+  really have moved that way (never from a card to a bank account, never a shop purchase or e-Transfer).
+- **Built-in rules live in code** (`SeedRules`) so updates bring new ones; **Sort out Other** lists the
+  places they couldn't recognise for one-tap sorting.

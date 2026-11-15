@@ -122,10 +122,11 @@ object StatementTextParser {
             val isCredit = raw.uppercase().contains("CR") || printed < 0
             txs.add(ParsedTransaction(d, if (isCredit) Math.abs(printed) else -Math.abs(printed), desc))
         }
-        if (txs.isEmpty()) warnings.add("No transactions recognised in this PDF.")
-
         val previous = cardPreviousBalance(text, layout)
         val newBalance = cardNewBalance(text, layout)
+        // A card that wasn't used: the balance didn't move, so no rows is the right answer, not a parsing failure.
+        val quietMonth = txs.isEmpty() && previous != null && previous == newBalance
+        if (txs.isEmpty() && !quietMonth) warnings.add("No transactions recognised in this PDF.")
         if (previous != null && newBalance != null) {
             val actual = txs.sumOf { it.amountCents }
             if (-(newBalance - previous) != actual) {
@@ -217,7 +218,7 @@ object StatementTextParser {
             }?.let { n -> ACCOUNT_DETAIL_END.find(n)?.let { e -> n.substring(0, e.range.last + 1) } ?: n }
             txs.add(ParsedTransaction(d, amount, if (detail != null) "$type $detail" else type, balanceCents = balance))
         }
-        if (txs.isEmpty()) warnings.add("No transactions recognised in this PDF.")
+        if (txs.isEmpty() && !(openingBalance != null && openingBalance == closingBalance)) warnings.add("No transactions recognised in this PDF.")
         if (mismatches > 0) warnings.add("$mismatches row(s) didn't match the running balance; their signs were guessed.")
         val sum = txs.sumOf { it.amountCents }
         if (openingBalance != null && closingBalance != null && openingBalance + sum != closingBalance) {

@@ -1,5 +1,6 @@
 package ca.emarshall.finance.core.transfers
 
+import ca.emarshall.finance.core.analytics.AccountKind
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 
@@ -13,6 +14,7 @@ data class TransferCandidate(
     val description: String,
     /** Already linked or unlinked by the user: leave alone. */
     val locked: Boolean = false,
+    val kind: AccountKind = AccountKind.BANK,
 )
 
 data class TransferPair(val outId: Long, val inId: Long, val score: Int)
@@ -21,6 +23,11 @@ data class TransferPair(val outId: Long, val inId: Long, val score: Int)
  * Pairs money leaving one of my accounts with the same amount arriving in another of my accounts within
  * ±[windowDays] days. Each transaction joins at most one pair. Pairs are chosen best-first: closest dates,
  * then descriptions that mention payments/transfers.
+ *
+ * The same amount on the same day is not enough: a $50 e-Transfer from a friend and a $50 purchase on a
+ * card are not a transfer. So a pair must also make sense: money never moves from a card to a bank
+ * account, neither side may be a shop purchase, an e-Transfer, a cash withdrawal or a paycheque, and a
+ * payment into a card must say so on one side or the other.
  */
 object TransferMatcher {
 
@@ -38,7 +45,7 @@ object TransferMatcher {
         for (o in outs) {
             val ins = insByKey[o.currency to -o.amountCents] ?: continue
             for (i in ins) {
-                if (i.accountId == o.accountId) continue
+                if (i.accountId == o.accountId || !plausible(o, i)) continue
                 val days = Math.abs(ChronoUnit.DAYS.between(o.date, i.date))
                 if (days > windowDays) continue
                 var score = 100 - days.toInt() * 10
@@ -55,6 +62,18 @@ object TransferMatcher {
             result.add(p)
         }
         return result
+    }
+
+    private val NEVER = listOf("POINT OF SALE", "POS PURCHASE", "E-TRANSFER", "ETRANSFER", "E-TRF", "E-TFR", "ABM", "ATM", "PAYROLL", "REFUND")
+    private val CARD_PAYMENT = listOf("PAYMENT", "THANK YOU", "SCOTIABANK TRANSIT", "CTFS", "TRANSFER", "TFR", "MASTERCARD", "VISA", "TRIANGLE")
+
+    private fun plausible(out: TransferCandidate, inn: TransferCandidate): Boolean {
+        if (out.kind == AccountKind.CARD) return false // purchases leave a card; money doesn't move from it to a bank account
+        val o = out.description.uppercase()
+        val i = inn.description.uppercase()
+        if (NEVER.any { o.contains(it) || i.contains(it) }) return false
+        if (inn.kind == AccountKind.CARD && CARD_PAYMENT.none { o.contains(it) || i.contains(it) }) return false
+        return true
     }
 
     private fun hasKeyword(s: String): Boolean {

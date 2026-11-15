@@ -94,8 +94,25 @@ statements:
 If a real CSV/OFX export disagrees with this, add a synthetic fixture with its structure and adjust
 `CsvProfileInference` / `OfxParser`.
 
-## Merchant cleaning and seed rules
+## Merchant cleaning and built-in rules
 
-On the 941 real rows, the seed rules categorise about 81%; the rest are one-off local merchants and
-purchases abroad, which "Always do this for <merchant>" handles. Seed rules only name chains and
-public companies, never anything personal.
+`MerchantCleaner` turns a bank description into a name; `SeedRules` (in code, not the database) sorts it
+into a category. The rules are of three kinds:
+
+- **Named chains** (priority 10), matched as whole words so `ESSO` never matches "Espresso" and `SHAW`
+  never matches "Shawarma".
+- **Describing words** (priority 2-6): "sushi", "dental", "barber", "hardware". A named chain always
+  beats a describing word, and at equal priority the longer pattern wins (`COSTCO GAS` over `COSTCO`).
+- **Bank wording** (priority 12-40): row types, fees, e-Transfers and transfers between accounts.
+
+For matching, the text also gets a copy with glued-on cities split off (`COFFEEDELTA BCCA`), because
+Scotiabank's 20-character merchant column runs straight into the city.
+
+The user's own rules beat all of these: "Always do this for <merchant>" (exact merchant name), rules
+typed on the Categories screen, and known payments (an amount, e.g. rent). Bump `SeedRules.VERSION`
+when the rules or the cleaner change: on the next start every transaction not sorted by hand is cleaned
+and sorted again.
+
+Built-in rules only name chains and public companies, never anything personal. When a real statement
+has merchants that end up in Other, add the chain or the describing word to `SeedRules`, with a case in
+`SeedRulesTest`.

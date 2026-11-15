@@ -86,8 +86,12 @@ data class TxFilter(
     val period: Period = Period.LAST_3,
     val month: YearMonth? = null,
 ) {
-    fun range(today: LocalDate = LocalDate.now()): Pair<LocalDate, LocalDate> = when (period) {
-        Period.THIS_MONTH -> today.withDayOfMonth(1) to today
+    /**
+     * [latest] is the newest month the statements cover. "Month" means that month: the calendar month is
+     * usually empty until its statements arrive.
+     */
+    fun range(today: LocalDate = LocalDate.now(), latest: YearMonth? = null): Pair<LocalDate, LocalDate> = when (period) {
+        Period.THIS_MONTH -> (latest ?: YearMonth.from(today)).let { it.atDay(1) to it.atEndOfMonth() }
         Period.LAST_MONTH -> YearMonth.from(today).minusMonths(1).let { it.atDay(1) to it.atEndOfMonth() }
         Period.LAST_3 -> YearMonth.from(today).minusMonths(2).atDay(1) to today
         Period.THIS_YEAR -> today.withDayOfYear(1) to today
@@ -103,7 +107,10 @@ class TransactionsViewModel @Inject constructor(
     private val transactions: TransactionRepository,
     accounts: AccountRepository,
     categories: CategoryRepository,
+    statements: ca.emarshall.finance.data.StatementsRepository,
 ) : ViewModel() {
+    /** Newest month the statements cover; what the "Month" filter shows. */
+    val latestMonth = statements.latestUnlocked.stateIn(viewModelScope, SharingStarted.Eagerly, null)
     private val route = savedState.toRoute<TransactionsRoute>()
     val filter = MutableStateFlow(
         TxFilter(
@@ -116,8 +123,8 @@ class TransactionsViewModel @Inject constructor(
     val accounts = accounts.accounts.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val categories = categories.categories.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    val rows = filter.debounce(150).flatMapLatest { f ->
-        val (from, to) = f.range()
+    val rows = combine(filter.debounce(150), latestMonth) { f, latest -> f to latest }.flatMapLatest { (f, latest) ->
+        val (from, to) = f.range(latest = latest)
         transactions.search(f.accountId, f.categoryId, from, to, f.query)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
@@ -141,6 +148,7 @@ fun TransactionsScreen(nav: NavController, route: TransactionsRoute, vm: Transac
     val accounts by vm.accounts.collectAsStateWithLifecycle()
     val categories by vm.categories.collectAsStateWithLifecycle()
     val totals by vm.totals.collectAsStateWithLifecycle()
+    val latestMonth by vm.latestMonth.collectAsStateWithLifecycle()
     val p = Fin.palette
 
     LargeTitleScreen("Activity") {
@@ -158,9 +166,11 @@ fun TransactionsScreen(nav: NavController, route: TransactionsRoute, vm: Transac
             )
         }
         item {
-            val periods = listOfNotNull(Period.CUSTOM_MONTH.takeIf { f.month != null }, Period.THIS_MONTH, Period.LAST_3, Period.THIS_YEAR, Period.ALL)
-            Segmented(periods, f.period, { if (it == Period.CUSTOM_MONTH) f.month!!.format(SHORT_MONTH) else when (it) {
-                Period.THIS_MONTH -> "Month"; Period.LAST_3 -> "3 mo"; Period.THIS_YEAR -> "Year"; else -> "All" } }, { p2 -> vm.update { it.copy(period = p2) } })
+            // A month picked elsewhere (a chart) gets its own tab, unless it is the latest month, which already has one.
+            val customIsLatest = f.month != null && f.month == latestMonth
+            val periods = listOfNotNull(Period.CUSTOM_MONTH.takeIf { f.month != null && !customIsLatest }, Period.THIS_MONTH, Period.LAST_3, Period.THIS_YEAR, Period.ALL)
+            Segmented(periods, if (f.period == Period.CUSTOM_MONTH && customIsLatest) Period.THIS_MONTH else f.period, { if (it == Period.CUSTOM_MONTH) f.month!!.format(SHORT_MONTH) else when (it) {
+                Period.THIS_MONTH -> latestMonth?.format(SHORT_MONTH) ?: "Month"; Period.LAST_3 -> "3 mo"; Period.THIS_YEAR -> "Year"; else -> "All" } }, { p2 -> vm.update { it.copy(period = p2) } })
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

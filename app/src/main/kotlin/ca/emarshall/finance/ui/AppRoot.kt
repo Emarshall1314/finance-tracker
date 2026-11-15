@@ -23,7 +23,10 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -90,6 +93,7 @@ import kotlin.reflect.KClass
 @Serializable object ClaudeSetupRoute
 @Serializable data class CategoryRoute(val categoryId: Long, val month: String)
 @Serializable object KnownPaymentsRoute
+@Serializable object SortOtherRoute
 /** [amountCents] and [day] prefill a new one (from a transaction). */
 @Serializable data class KnownPaymentEditRoute(val id: Long = -1, val amountCents: Long = 0, val day: Int = 0)
 
@@ -118,14 +122,13 @@ fun AppRoot(
     deviceSecure: Boolean,
 ) {
     val locked by appLock.locked.collectAsStateWithLifecycle()
-    if (locked) {
-        LockScreen(deviceSecure, onUnlockRequested, onContinueInsecure = { appLock.unlock() })
-        return
-    }
 
+    // The app's screens stay in place underneath the lock screen, so unlocking returns to where you were
+    // (an import half-way through, a transaction you were looking at) instead of starting over at Home.
     val nav = rememberNavController()
     val pending by pendingNav.collectAsStateWithLifecycle()
-    LaunchedEffect(pending) {
+    LaunchedEffect(pending, locked) {
+        if (locked) return@LaunchedEffect // a shared file waits until the app is unlocked
         when (val p = pending) {
             is PendingNav.ImportFiles -> nav.navigate(ImportRoute(uris = p.uris.joinToString("\n")))
             is PendingNav.ImportForAccount -> nav.navigate(ImportRoute(accountId = p.accountId))
@@ -140,7 +143,10 @@ fun AppRoot(
     val dest = backStack?.destination
     val showBar = TABS.any { t -> dest?.hasRoute(t.routeClass) == true }
 
+    androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
     Scaffold(
+        // Hidden from screen readers while locked; the lock screen on top also swallows every touch.
+        modifier = if (locked) Modifier.clearAndSetSemantics { } else Modifier,
         bottomBar = {
             if (showBar) {
                 NavigationBar(containerColor = ca.emarshall.finance.ui.theme.Fin.palette.card, tonalElevation = 0.dp) {
@@ -192,9 +198,17 @@ fun AppRoot(
             composable<ClaudeChatRoute> { ClaudeChatScreen(nav) }
             composable<ClaudeSetupRoute> { ClaudeSetupScreen(nav) }
             composable<CategoryRoute> { ca.emarshall.finance.ui.categories.CategoryDetailScreen(nav) }
+            composable<SortOtherRoute> { ca.emarshall.finance.ui.categories.SortOtherScreen(nav) }
             composable<KnownPaymentsRoute> { ca.emarshall.finance.ui.categories.KnownPaymentsScreen(nav) }
             composable<KnownPaymentEditRoute> { ca.emarshall.finance.ui.categories.KnownPaymentEditScreen(nav) }
         }
+    }
+    if (locked) {
+        val activity = androidx.activity.compose.LocalActivity.current
+        // Back leaves the app rather than reaching the screens underneath.
+        androidx.activity.compose.BackHandler { activity?.moveTaskToBack(true) }
+        LockScreen(deviceSecure, onUnlockRequested, onContinueInsecure = { appLock.unlock() })
+    }
     }
 }
 
@@ -202,7 +216,9 @@ fun AppRoot(
 private fun LockScreen(deviceSecure: Boolean, onUnlock: () -> Unit, onContinueInsecure: () -> Unit) {
     val white = androidx.compose.ui.graphics.Color.White
     Column(
-        Modifier.fillMaxSize().background(ca.emarshall.finance.ui.theme.Fin.palette.heroGradient).padding(32.dp),
+        Modifier.fillMaxSize().background(ca.emarshall.finance.ui.theme.Fin.palette.heroGradient)
+            .pointerInput(Unit) { detectTapGestures { } } // nothing underneath can be touched
+            .padding(32.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {

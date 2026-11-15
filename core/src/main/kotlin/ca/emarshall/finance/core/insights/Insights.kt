@@ -49,13 +49,16 @@ object InsightEngine {
     ): List<Insight> {
         val home = facts.mapNotNull { it.forCashFlow() }.filter { it.currency == "CAD" }
         val spend = home.filter { it.kind == CategoryKind.EXPENSE && !it.countsAsTransfer && it.amountCents < 0 }
+        // "Recent" is measured from the newest transaction on file, not the calendar: statements arrive up
+        // to a month late, and last month's charges are still news the day their statement is imported.
+        val asOf = home.maxOfOrNull { it.date }?.let { minOf(it, today) } ?: today
         val out = ArrayList<Insight>()
-        out += largeCharges(spend, today)
-        out += duplicates(spend, bills, today)
-        out += priceIncreases(home, bills, today)
-        out += newSubscriptions(bills, today)
-        out += categorySpikes(spend, today)
-        out += feesAndInterest(home, accountNames, today)
+        out += largeCharges(spend, asOf)
+        out += duplicates(spend, bills, asOf)
+        out += priceIncreases(home, bills, asOf)
+        out += newSubscriptions(bills, asOf)
+        out += categorySpikes(spend, asOf)
+        out += feesAndInterest(home, accountNames, asOf)
         out += negativeBalances(balances, today)
         if (completeThrough != null) out += spentMoreThanEarned(home, completeThrough)
         out += paychequeLate(home, today)
@@ -184,7 +187,7 @@ object InsightEngine {
             }
 
     private fun negativeBalances(balances: List<AccountBalance>, today: LocalDate) = balances
-        .filter { !it.isLiability && it.balanceCents < 0 && it.currency == "CAD" && recent(it.asOf, today, 20) }
+        .filter { !it.isLiability && it.balanceCents < 0 && it.currency == "CAD" && recent(it.asOf, today, 45) }
         .map {
             Insight(
                 "neg:${it.accountId}:${it.asOf}", InsightKind.NEGATIVE_BALANCE, Severity.ALERT,
@@ -216,13 +219,16 @@ object InsightEngine {
         val usual = gaps[gaps.size / 2]
         if (usual !in 6..35) return emptyList()
         val last = pays.last()
-        val since = ChronoUnit.DAYS.between(last, today)
+        // Only as far as that account's statements reach: a missing paycheque can't be seen in a statement that isn't in yet.
+        val payAccounts = facts.filter { it.categoryKey == "paycheque" && it.amountCents > 0 }.map { it.accountId }.toSet()
+        val through = facts.filter { it.accountId in payAccounts }.maxOf { it.date }
+        val since = ChronoUnit.DAYS.between(last, minOf(today, through))
         if (since <= usual + 5 || since > usual * 3) return emptyList()
         return listOf(
             Insight(
                 "paylate:$last", InsightKind.PAYCHEQUE_LATE, Severity.WARNING,
                 "No paycheque since ${last}",
-                "You're usually paid every $usual days; it's been $since. If you haven't imported recent statements, that may be why.",
+                "You're usually paid every $usual days, but your statements show $since days without one.",
                 today,
             ),
         )

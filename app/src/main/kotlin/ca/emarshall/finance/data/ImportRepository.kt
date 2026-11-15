@@ -276,9 +276,17 @@ class ImportRepository @Inject constructor(
 
     private suspend fun learnClosingDay(accountId: Long) {
         val account = accounts.get(accountId) ?: return
-        if (account.closingDay != null) return
-        val ends = importDao.allBatches().filter { it.accountId == accountId }.mapNotNull { it.periodEnd }
-        StatementCoverage.inferClosingDay(ends)?.let { accounts.update(account.copy(closingDay = it)) }
+        val ends = importDao.allBatches().filter { it.accountId == accountId }.mapNotNull { it.periodEnd }.sorted()
+        val day = if (account.closingDay == null) {
+            StatementCoverage.inferClosingDay(ends)
+        } else {
+            // The bank moved the statement date: the three newest statements agree on a different day.
+            ends.takeLast(3).takeIf { it.size == 3 }?.map { StatementCoverage.inferClosingDay(listOf(it)) }?.distinct()?.singleOrNull()
+        } ?: return
+        if (day == account.closingDay) return
+        accounts.update(account.copy(closingDay = day))
+        // The statement reminder follows the account's closing day.
+        db.reminders().forAccount(accountId)?.let { db.reminders().upsert(it.copy(closingDay = day)) }
     }
 
     /**
@@ -336,8 +344,12 @@ class ImportRepository @Inject constructor(
             null
         }
         val preview = preview(detected, account, profile)
+        // A statement with nothing new in it still matters when it covers a period no import has yet (a card
+        // that wasn't used that month): recording it is what lets the month count as complete.
+        val newPeriod = preview.statement.periodEnd != null && detected.previousImport == null &&
+            importDao.allBatches().none { it.accountId == account.id && it.periodEnd == preview.statement.periodEnd }
         return when {
-            preview.dedup.newRows.isEmpty() -> QuickImportOutcome.AlreadyImported(account.nickname, preview.statement.transactions.size)
+            preview.dedup.newRows.isEmpty() && !newPeriod -> QuickImportOutcome.AlreadyImported(account.nickname, preview.statement.transactions.size)
             preview.statement.warnings.isNotEmpty() -> QuickImportOutcome.NeedsReview(detected, preview.statement.warnings.first())
             else -> QuickImportOutcome.Imported(commit(preview, deferPostProcessing), account.nickname, preview)
         }

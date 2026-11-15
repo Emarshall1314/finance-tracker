@@ -16,6 +16,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
@@ -97,7 +98,7 @@ fun OverviewScreen(nav: NavController, vm: OverviewViewModel = hiltViewModel()) 
                 ca.emarshall.finance.ui.design.Footnote("${monthName(done.plusMonths(1))} unlocks when your ${next.first} statement arrives${around(next.second)}.")
             }
 
-            if (attention.first.isNotEmpty() || attention.second > 0 || stale > 0) item {
+            if (attention.first.isNotEmpty() || attention.second > 0 || stale > 0 || s.unsortedPlaces > 0) item {
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (attention.first.isNotEmpty()) {
                         Pill(
@@ -109,6 +110,11 @@ fun OverviewScreen(nav: NavController, vm: OverviewViewModel = hiltViewModel()) 
                         Pill(if (attention.second == 1) "1 statement missing" else "${attention.second} statements missing", Icons.Default.Description, Fin.palette.accent) {
                             nav.navigate(StatementsRoute)
                         }
+                    }
+                    if (s.unsortedPlaces > 0) {
+                        Pill(
+                            "${Money.formatWhole(s.unsortedCents)} in Other to sort", Icons.Default.Category, Fin.palette.chart[1],
+                        ) { nav.navigate(ca.emarshall.finance.ui.SortOtherRoute) }
                     }
                     if (stale > 0) Pill("$stale account${if (stale > 1) "s" else ""} out of date", Icons.Default.Schedule, Fin.palette.secondaryLabel) {
                         nav.navigate(StatementsRoute)

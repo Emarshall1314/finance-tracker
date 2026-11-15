@@ -31,6 +31,7 @@ class FinanceApp : Application(), Configuration.Provider {
     @Inject lateinit var imports: dagger.Lazy<ImportRepository>
     @Inject lateinit var settings: dagger.Lazy<SettingsRepository>
     @Inject lateinit var accounts: dagger.Lazy<AccountRepository>
+    @Inject lateinit var transactions: dagger.Lazy<ca.emarshall.finance.data.TransactionRepository>
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -52,9 +53,20 @@ class FinanceApp : Application(), Configuration.Provider {
                 if (done < 1) imports.get().repairMisfiledImports()
                 // Accounts set up from statements before the app asked: ask once now.
                 if (done < 2) accounts.get().markStatementAccountsUnconfirmed()
-                // Once: transfers out of chequing that aren't paired become To/From Savings.
-                if (done < 3) categories.get().recategorizeAll()
-                if (done < 3) settings.get().setRepairVersion(3)
+                // Once: pair transfers again with the stricter rules (older versions paired any two equal amounts).
+                // That also re-sorts every transaction, which a new set of built-in rules needs too.
+                val rulesVersion = settings.get().seedRulesVersion()
+                if (done < 4 || rulesVersion < ca.emarshall.finance.core.categorize.SeedRules.VERSION) categories.get().recleanMerchants()
+                if (done < 4) {
+                    transactions.get().repairTransfers()
+                } else if (rulesVersion < ca.emarshall.finance.core.categorize.SeedRules.VERSION) {
+                    categories.get().recategorizeAll()
+                    transactions.get().rematchTransfers()
+                }
+                if (done < 4) settings.get().setRepairVersion(4)
+                if (rulesVersion != ca.emarshall.finance.core.categorize.SeedRules.VERSION) {
+                    settings.get().setSeedRulesVersion(ca.emarshall.finance.core.categorize.SeedRules.VERSION)
+                }
             } catch (e: Exception) {
                 AppLog.w("FinanceApp", "Startup task failed: ${e.javaClass.simpleName}")
             }

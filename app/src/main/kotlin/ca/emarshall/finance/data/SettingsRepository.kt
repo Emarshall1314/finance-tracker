@@ -105,6 +105,10 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val con
     suspend fun repairVersion(): Int = ds.data.first()[REPAIR_VERSION] ?: 0
     suspend fun setRepairVersion(v: Int) = ds.edit { it[REPAIR_VERSION] = v }
 
+    /** [ca.emarshall.finance.core.categorize.SeedRules.VERSION] the transactions were last sorted with. */
+    suspend fun seedRulesVersion(): Int = ds.data.first()[SEED_RULES_VERSION] ?: 0
+    suspend fun setSeedRulesVersion(v: Int) = ds.edit { it[SEED_RULES_VERSION] = v }
+
     suspend fun clearAll() = ds.edit { it.clear() }
 
     private companion object {
@@ -125,5 +129,6 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val con
         val AI_BASE_URL = stringPreferencesKey("ai_base_url")
         val AI_MODEL = stringPreferencesKey("ai_model")
         val REPAIR_VERSION = intPreferencesKey("repair_version")
+        val SEED_RULES_VERSION = intPreferencesKey("seed_rules_version")
     }
 }

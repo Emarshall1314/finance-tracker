@@ -20,8 +20,10 @@ for what each bank's files look like.
   ending it's for, and the app sets the account up from that, then asks on Home whether its guess is
   right (keep it, change it, or say it's the same as an account you have, e.g. a reissued card).
   PDF statements are checked against their own opening/closing totals.
-- **Categorise** automatically with rules for common BC and Canadian merchants. Recategorise a
-  transaction and choose "Always do this for <merchant>" to teach it.
+- **Categorise** automatically: about 2,100 built-in rules for Canadian and BC chains plus words that
+  say what a place is ("sushi", "dental", "barber"). Recategorise a transaction and choose "Always do
+  this for <merchant>" to teach it, or use **Sort out Other** (Home, or Settings → Categories & rules)
+  to give every unrecognised place a category in one pass.
 - **Known payments** (Settings → Known payments, or "I pay this amount regularly" on a transaction):
   "Rent, $1,800, around the 1st" makes every payment of that amount Rent, even an e-Transfer whose
   description says nothing. Transfers and categories you picked by hand are never changed.

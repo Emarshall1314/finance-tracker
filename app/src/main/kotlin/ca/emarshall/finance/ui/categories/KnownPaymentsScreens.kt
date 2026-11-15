@@ -81,6 +81,35 @@ private fun List<TxRow>.matching(rule: AmountRule): List<TxRow> = filter { t ->
         rule.matches(t.amountCents, t.date)
 }.sortedByDescending { it.date }
 
+/** The same amount paid again and again with no clear category: probably rent or another regular payment. */
+data class AmountSuggestion(val amountCents: Long, val count: Int, val last: java.time.LocalDate, val day: Int?)
+
+/**
+ * Amounts of $50 or more that went out at least three times, in three different months, as e-Transfers or
+ * uncategorised payments, and that no known payment covers yet. The day is suggested when they cluster.
+ */
+fun List<TxRow>.repeatedAmounts(existing: List<AmountRule>): List<AmountSuggestion> = filter { t ->
+    val investment = runCatching { AccountType.valueOf(t.accountType) }.getOrNull()?.isInvestment == true
+    !investment && t.amountCents <= -50_00 && t.transferLinkId == null && !t.categoryLocked &&
+        (t.categoryId == null || t.categoryKey == "etransfer_sent" || t.categoryKey == DefaultCategories.FALLBACK_EXPENSE)
+}.groupBy { -it.amountCents }
+    .filter { (amount, l) ->
+        l.size >= 3 && l.map { java.time.YearMonth.from(it.date) }.distinct().size >= 3 && existing.none { it.matches(-amount, null) }
+    }
+    .map { (amount, l) ->
+        val days = l.map { it.date.dayOfMonth }.sorted()
+        // Paid around the same time each month? Allow for month ends: 30, 31, 1, 2 are close together.
+        val shifted = days.map { if (it <= 8) it + 31 else it }.sorted()
+        val day = when {
+            days.last() - days.first() <= 8 -> days[days.size / 2]
+            shifted.last() - shifted.first() <= 8 -> shifted[shifted.size / 2].let { if (it > 31) it - 31 else it }
+            else -> null
+        }
+        AmountSuggestion(amount, l.size, l.maxOf { it.date }, day)
+    }
+    .sortedByDescending { it.amountCents * it.count }
+    .take(5)
+
 data class KnownPaymentRow(val rule: AmountRuleEntity, val categoryName: String, val matches: Int, val last: java.time.LocalDate?)
 
 @HiltViewModel
@@ -92,6 +121,9 @@ class KnownPaymentsViewModel @Inject constructor(categories: CategoryRepository,
             KnownPaymentRow(r, names[r.categoryId] ?: "?", m.size, m.firstOrNull()?.date)
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    val suggestions = combine(categories.amountRules, transactions.rows) { rules, txs -> txs.repeatedAmounts(rules.map { it.toCore() }) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 }
 
 fun describe(r: AmountRuleEntity): String = buildString {
@@ -103,6 +135,7 @@ fun describe(r: AmountRuleEntity): String = buildString {
 @Composable
 fun KnownPaymentsScreen(nav: NavController, vm: KnownPaymentsViewModel = hiltViewModel()) {
     val rows by vm.rows.collectAsStateWithLifecycle()
+    val suggestions by vm.suggestions.collectAsStateWithLifecycle()
     val p = Fin.palette
     DetailScreen("Known payments", onBack = { nav.popBackStack() }) {
         item {
@@ -130,6 +163,21 @@ fun KnownPaymentsScreen(nav: NavController, vm: KnownPaymentsViewModel = hiltVie
                 }
             }
             item { PrimaryButton("Add a payment", { nav.navigate(KnownPaymentEditRoute()) }) }
+        }
+        if (suggestions.isNotEmpty()) {
+            item { SectionHeader("Amounts you pay again and again") }
+            item {
+                Group {
+                    suggestions.forEachIndexed { i, s ->
+                        GroupRow(
+                            Money.format(s.amountCents),
+                            subtitle = "${s.count} payments, last on ${s.last.format(SHORT_DAY)}" + (s.day?.let { " · around the ${ordinal(it)}" } ?: "") + "\nTap to say what it's for",
+                            icon = Icons.Default.Tune, iconColor = p.chart[2], showChevron = true, divider = i < suggestions.size - 1,
+                            onClick = { nav.navigate(KnownPaymentEditRoute(amountCents = s.amountCents, day = s.day ?: 0)) },
+                        )
+                    }
+                }
+            }
         }
         item {
             Footnote("Payments the app already knows are transfers (card payments, Questrade deposits) are never changed, and neither is a category you picked by hand.")

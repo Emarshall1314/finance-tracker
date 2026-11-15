@@ -185,6 +185,32 @@ class CoverageInsightsGoalsTest {
         assertTrue(over.detail.startsWith("Over by $50"))
     }
 
+    @Test fun monthlyGoalsFollowTheStatements() {
+        // Nov 20: November has no transactions yet (its statements arrive in December). October is the latest month on file.
+        val today = d(2026, 11, 20)
+        val oct = java.time.YearMonth.of(2026, 10)
+        val g = Goal(2, GoalType.SPEND_LIMIT, "Dining under $300", targetCents = 300_00, categoryKey = "dining", start = d(2026, 1, 1))
+        val facts = listOf(f(d(2026, 10, 3), -350_00, "Cafe", "dining"), f(d(2026, 9, 3), -200_00, "Cafe", "dining"))
+        val p = GoalTracker.progress(g, facts, today, oct)
+        assertEquals(GoalStatus.OFF_TRACK, p.status)
+        assertEquals("$350 of $300 in October", p.headline)
+        assertTrue(p.detail.startsWith("Over by $50"))
+        // Without statement coverage it would have looked at empty November and said all is well.
+        assertEquals(GoalStatus.ON_TRACK, GoalTracker.progress(g, facts, today).status)
+    }
+
+    @Test fun paychequeAlertWaitsForStatements() {
+        val today = d(2026, 11, 20)
+        // Paid every two weeks; the chequing statement on file ends Oct 31, and the last pay in it is Oct 30.
+        val pays = listOf(d(2026, 9, 4), d(2026, 9, 18), d(2026, 10, 2), d(2026, 10, 16), d(2026, 10, 30))
+            .map { f(it, 2000_00, "Payroll", "paycheque", CategoryKind.INCOME) }
+        val quiet = analyze(pays + f(d(2026, 10, 31), -20_00, "Grocer", "groceries"), today)
+        assertFalse(quiet.any { it.kind == InsightKind.PAYCHEQUE_LATE })
+        // A statement that runs three weeks past the last pay with no new one is worth a warning.
+        val late = analyze(pays + f(d(2026, 11, 19), -20_00, "Grocer", "groceries"), today)
+        assertTrue(late.any { it.kind == InsightKind.PAYCHEQUE_LATE })
+    }
+
     @Test fun savingsRateGoal() {
         val facts = (3..5).flatMap { m -> listOf(f(d(2026, m, 1), 4000_00, "Payroll", "paycheque", CategoryKind.INCOME), f(d(2026, m, 5), -3000_00, "Rent", "bills")) }
         val g = Goal(3, GoalType.SAVINGS_RATE, "Save 20%", targetPercent = 20, start = d(2026, 1, 1))

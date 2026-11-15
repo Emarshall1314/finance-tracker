@@ -3,7 +3,18 @@ package ca.emarshall.finance.core.recurring
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 
-data class RecurringInput(val id: Long, val date: LocalDate, val amountCents: Long, val merchant: String, val currency: String = "CAD")
+data class RecurringInput(
+    val id: Long,
+    val date: LocalDate,
+    val amountCents: Long,
+    val merchant: String,
+    val currency: String = "CAD",
+    /**
+     * How far this row's account has data (its latest statement). A bill isn't "cancelled" just because
+     * the statement that would show its next charge hasn't been imported yet.
+     */
+    val dataThrough: LocalDate? = null,
+)
 
 data class RecurringSeries(
     val merchant: String,
@@ -47,8 +58,13 @@ object RecurringDetector {
                 val avg = gaps.average()
                 if (avg < 25 || avg > 35 || gaps.any { it > 40 }) continue
                 val last = deduped.last().date
-                val next = last.plusMonths(1)
-                if (ChronoUnit.DAYS.between(last, today) > staleAfterDays) continue // cancelled
+                // Judged against the data we have, not the calendar: statements arrive up to a month late.
+                val horizon = deduped.last().dataThrough?.let { minOf(it, today) } ?: today
+                if (ChronoUnit.DAYS.between(last, horizon) > staleAfterDays) continue // cancelled
+                // The next charge still to come (charges since the last statement are assumed to have happened).
+                var months = 1L
+                while (last.plusMonths(months).isBefore(today)) months++
+                val next = last.plusMonths(months)
                 val typical = median(deduped.map { it.amountCents })
                 result.add(
                     RecurringSeries(

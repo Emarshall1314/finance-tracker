@@ -56,6 +56,34 @@ class TransfersAndRecurringTest {
         assertTrue(pairs.isEmpty())
     }
 
+    @Test fun equalAmountsAloneAreNotATransfer() {
+        val card = ca.emarshall.finance.core.analytics.AccountKind.CARD
+        fun tc(id: Long, acct: Long, cents: Long, desc: String, kind: ca.emarshall.finance.core.analytics.AccountKind = ca.emarshall.finance.core.analytics.AccountKind.BANK) =
+            TransferCandidate(id, acct, d(3, 1), cents, "CAD", desc, kind = kind)
+        // A friend's e-Transfer and a card purchase of the same amount.
+        assertTrue(TransferMatcher.match(listOf(tc(1, 20, -5000, "PETRO-CANADA 123", card), tc(2, 10, 5000, "Deposit Interac E-Transfer"))).isEmpty())
+        // An e-Transfer sent and a refund on the card.
+        assertTrue(TransferMatcher.match(listOf(tc(1, 10, -5000, "Withdrawal Free Interac E-Transfer"), tc(2, 20, 5000, "AMAZON.CA", card))).isEmpty())
+        // A shop purchase from chequing and a refund on the card.
+        assertTrue(TransferMatcher.match(listOf(tc(1, 10, -2500, "Point of sale purchase Fpos Some Shop"), tc(2, 20, 2500, "SOME SHOP", card))).isEmpty())
+        // A bill and an unrelated credit on the card: nothing says "payment".
+        assertTrue(TransferMatcher.match(listOf(tc(1, 10, -8025, "Hydro bill B.C. Hydro"), tc(2, 20, 8025, "BEST BUY #12", card))).isEmpty())
+        // The real thing still pairs.
+        assertEquals(1, TransferMatcher.match(listOf(tc(1, 10, -30000, "Credit Card/LOC payment Main and Example"), tc(2, 20, 30000, "SCOTIABANK TRANSIT 10520", card))).size)
+        assertEquals(1, TransferMatcher.match(listOf(tc(1, 10, -150000, "Misc. payment Questrade Inc"), tc(2, 30, 150000, "Deposits", ca.emarshall.finance.core.analytics.AccountKind.INVESTMENT))).size)
+    }
+
+    @Test fun billsSurviveLateStatements() {
+        val through = d(4, 15) // the card's latest statement closed Apr 15
+        val txs = listOf(d(1, 20), d(2, 20), d(3, 20)).mapIndexed { i, day -> RecurringInput(i.toLong(), day, -1699, "Netflix", dataThrough = through) }
+        // Jun 1: 73 days since the last charge on file, but only 26 days of that are covered by statements.
+        val s = RecurringDetector.detect(txs, today = d(6, 1)).single()
+        assertEquals(d(6, 20), s.nextExpected) // the next one still to come, not one already past
+        // Once statements run well past the last charge with nothing new, it's treated as cancelled.
+        val later = txs.map { it.copy(dataThrough = d(6, 15)) }
+        assertTrue(RecurringDetector.detect(later, today = d(6, 20)).isEmpty())
+    }
+
     private fun r(id: Long, date: LocalDate, cents: Long, merchant: String) = RecurringInput(id, date, cents, merchant)
 
     @Test fun detectsMonthlySubscriptionWithSmallPriceChange() {

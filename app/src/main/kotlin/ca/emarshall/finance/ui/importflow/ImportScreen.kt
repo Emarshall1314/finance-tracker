@@ -384,10 +384,16 @@ private fun PreviewStep(s: ImportStep.Preview, vm: ImportViewModel) {
                 )
             }
         }
-    } else {
-        Notice("Nothing new in this file.")
     }
-    PrimaryButton("Import ${p.dedup.newRows.size} transactions", { vm.commit(p) }, enabled = p.dedup.newRows.isNotEmpty())
+    // A statement with no new rows (a card that wasn't used) can still be recorded so its month counts as covered.
+    val recordOnly = p.dedup.newRows.isEmpty() && st.periodEnd != null && p.detected.previousImport == null
+    if (p.dedup.newRows.isEmpty()) {
+        Notice(if (recordOnly) "No new transactions. Recording the statement marks ${st.periodEnd!!.pretty()} as covered for ${p.account.nickname}." else "Nothing new in this file.")
+    }
+    PrimaryButton(
+        if (recordOnly) "Record this statement" else "Import ${p.dedup.newRows.size} transactions",
+        { vm.commit(p) }, enabled = p.dedup.newRows.isNotEmpty() || recordOnly,
+    )
     if (p.profile != null) TextButton(onClick = { vm.editMapping(p) }) { Text("Change column mapping") }
 }
 
