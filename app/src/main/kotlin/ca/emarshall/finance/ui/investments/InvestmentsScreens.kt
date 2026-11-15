@@ -90,8 +90,17 @@ class InvestmentsViewModel @Inject constructor(
     private val questrade: QuestradeRepository,
     accounts: AccountRepository,
     settings: SettingsRepository,
+    db: ca.emarshall.finance.data.db.FinanceDatabase,
 ) : ViewModel() {
     val settings = settings.settings.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** Combined value of the Questrade accounts on each day a sync recorded it. */
+    val history = combine(accounts.accounts, db.balances().observeAll()) { accs, snapshots ->
+        val mine = accs.filter { it.questradeNumber != null }.map { it.id }.toSet()
+        ca.emarshall.finance.core.analytics.NetWorth.daily(
+            snapshots.filter { it.accountId in mine }.map { ca.emarshall.finance.core.analytics.BalancePoint(it.accountId, it.date, it.balanceCents, it.currency) },
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val view = combine(accounts.accounts, questrade.latestBalances, questrade.latestPositions, questrade.activities, settings.settings) { a, b, p, act, s ->
         InvestmentsCalculator.build(a, b, p, act, LocalDate.now(), s.questradeLastSyncMillis)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
@@ -124,6 +133,7 @@ fun InvestmentsScreen(nav: NavController, vm: InvestmentsViewModel = hiltViewMod
     val s by vm.settings.collectAsStateWithLifecycle()
     val v by vm.view.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
+    val history by vm.history.collectAsStateWithLifecycle()
     LargeTitleScreen("Investments") {
         val status = s?.questradeStatus ?: return@LargeTitleScreen
         if (status != QuestradeStatus.CONNECTED) {
@@ -139,12 +149,12 @@ fun InvestmentsScreen(nav: NavController, vm: InvestmentsViewModel = hiltViewMod
                 }
             }
         }
-        v?.let { view -> item { Column(verticalArrangement = Arrangement.spacedBy(16.dp)) { InvestmentsContent(view, busy, vm::sync) } } }
+        v?.let { view -> item { Column(verticalArrangement = Arrangement.spacedBy(16.dp)) { InvestmentsContent(view, busy, history, vm::sync) } } }
     }
 }
 
 @Composable
-private fun InvestmentsContent(v: InvestmentsView, busy: Boolean, onSync: () -> Unit) {
+private fun InvestmentsContent(v: InvestmentsView, busy: Boolean, history: List<Pair<LocalDate, Long>>, onSync: () -> Unit) {
     ca.emarshall.finance.ui.design.HeroCard(ca.emarshall.finance.ui.theme.Fin.palette.investGradient) {
         val white = androidx.compose.ui.graphics.Color.White
         Text("Total equity", color = white.copy(alpha = 0.8f), style = MaterialTheme.typography.bodyMedium)
@@ -158,6 +168,24 @@ private fun InvestmentsContent(v: InvestmentsView, busy: Boolean, onSync: () -> 
             Modifier.weight(1f).padding(start = 4.dp), style = MaterialTheme.typography.bodySmall, color = p.secondaryLabel,
         )
         if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else TextButton(onClick = onSync) { Text("Sync now") }
+    }
+
+    if (history.size >= 2) {
+        ca.emarshall.finance.ui.design.SectionHeader("Portfolio value")
+        var point by androidx.compose.runtime.remember(history) { androidx.compose.runtime.mutableStateOf<Int?>(null) }
+        ca.emarshall.finance.ui.design.FinCard {
+            val first = history.first()
+            val shown = point?.let { history.getOrNull(it) } ?: history.last()
+            val change = shown.second - first.second
+            Text(Money.formatWhole(shown.second), style = MaterialTheme.typography.headlineSmall)
+            Text(
+                (if (point == null) "Now" else shown.first.format(ca.emarshall.finance.ui.SHORT_DAY)) +
+                    " · ${if (change >= 0) "▲" else "▼"} ${Money.formatWhole(Math.abs(change))} since ${first.first.format(ca.emarshall.finance.ui.SHORT_DAY)}",
+                style = MaterialTheme.typography.bodySmall, color = if (change >= 0) p.positive else p.negative,
+            )
+            ca.emarshall.finance.ui.design.LineChart(history.map { it.second }, point, { point = it }, p.chart[2], height = 120.dp)
+            Text("Includes deposits and withdrawals, not just market moves. One point per day the app synced.", style = MaterialTheme.typography.bodySmall, color = p.tertiaryLabel)
+        }
     }
 
     if (v.holdings.isNotEmpty()) {

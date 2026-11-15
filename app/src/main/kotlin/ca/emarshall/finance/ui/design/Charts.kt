@@ -71,7 +71,7 @@ fun BarChart(
     if (bars.isEmpty()) return
     val p = Fin.palette
     val measurer = rememberTextMeasurer()
-    val select by rememberUpdatedState(onSelect)
+    val select = rememberHapticSelect(selected, onSelect)
     val current by rememberUpdatedState(selected)
     val n = bars.size
     val reveal = rememberReveal(bars.map { it.value })
@@ -149,7 +149,7 @@ fun DonutChart(
     center: @Composable () -> Unit = {},
 ) {
     val p = Fin.palette
-    val select by rememberUpdatedState(onSelect)
+    val select = rememberHapticSelect(selected, onSelect)
     val current by rememberUpdatedState(selected)
     val total = slices.sumOf { it.value.coerceAtLeast(0) }.coerceAtLeast(1)
     val grow by animateFloatAsState(if (selected != null) 1f else 0f, label = "donut")
@@ -210,7 +210,7 @@ fun LineChart(
 ) {
     if (values.size < 2) return
     val p = Fin.palette
-    val select by rememberUpdatedState(onSelect)
+    val select = rememberHapticSelect(selected, onSelect)
     val current by rememberUpdatedState(selected)
     val n = values.size
     val reveal = rememberReveal(values, 900)
@@ -279,6 +279,33 @@ fun SegmentedBar(
     }
 }
 
+/** [onSelect] with a light tick from the phone each time the selection lands on something new. */
+@Composable
+private fun rememberHapticSelect(selected: Int?, onSelect: (Int?) -> Unit): (Int?) -> Unit {
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val current by rememberUpdatedState(selected)
+    val callback by rememberUpdatedState(onSelect)
+    return androidx.compose.runtime.remember(haptic) {
+        { i: Int? ->
+            if (i != null && i != current) haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+            callback(i)
+        }
+    }
+}
+
+/**
+ * [target] cents, counting up (or down) to it whenever it changes, for the one big number on a screen.
+ * The value returned when the count finishes is exactly [target].
+ */
+@Composable
+fun animatedCents(target: Long): Long {
+    val a = androidx.compose.runtime.remember { androidx.compose.animation.core.Animatable(0f) }
+    androidx.compose.runtime.LaunchedEffect(target) {
+        a.animateTo(target.toFloat(), androidx.compose.animation.core.tween(650, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+    }
+    return if (!a.isRunning && a.targetValue == target.toFloat()) target else a.value.toLong()
+}
+
 /** 0 → 1 once, when a chart first appears, so bars grow and arcs sweep in. Restarts when [key] changes. */
 @Composable
 fun rememberReveal(key: Any?, millis: Int = 650): Float {
@@ -310,7 +337,7 @@ fun FlowChart(
     if (src.isEmpty() || dst.isEmpty()) return
     val p = Fin.palette
     val measurer = rememberTextMeasurer()
-    val select by rememberUpdatedState(onSelect)
+    val select = rememberHapticSelect(selected, onSelect)
     val current by rememberUpdatedState(selected)
     val reveal = rememberReveal(src to dst, 800)
     val rowHeight = 26.dp
@@ -449,7 +476,7 @@ fun MonthHeatmap(
     if (days.isEmpty()) return
     val p = Fin.palette
     val measurer = rememberTextMeasurer()
-    val select by rememberUpdatedState(onSelect)
+    val select = rememberHapticSelect(selected, onSelect)
     val current by rememberUpdatedState(selected)
     val reveal = rememberReveal(days, 500)
     val rows = (firstWeekday + days.size + 6) / 7

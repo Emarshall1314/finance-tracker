@@ -166,6 +166,17 @@ object NetWorth {
     fun total(balances: List<AccountBalance>, homeCurrency: String = "CAD"): Long =
         balances.filter { it.currency == homeCurrency }.sumOf { it.balanceCents }
 
+    /**
+     * The combined balance of the accounts in [points] on every day one of them has a balance, oldest
+     * first: each account counts with its latest balance on or before that day.
+     */
+    fun daily(points: List<BalancePoint>, homeCurrency: String = "CAD"): List<Pair<LocalDate, Long>> {
+        val byAccount = points.filter { it.currency == homeCurrency }.groupBy { it.accountId }.mapValues { (_, l) -> l.sortedBy { it.date } }
+        return byAccount.values.flatten().map { it.date }.distinct().sorted().map { day ->
+            day to byAccount.values.sumOf { l -> l.lastOrNull { !it.date.isAfter(day) }?.balanceCents ?: 0L }
+        }
+    }
+
     /** Net worth at each month end: each account's latest balance on or before that day. */
     fun trend(points: List<BalancePoint>, endMonth: YearMonth, months: Int, homeCurrency: String = "CAD"): List<Pair<YearMonth, Long>> {
         val byAccount = points.filter { it.currency == homeCurrency }.groupBy { it.accountId }

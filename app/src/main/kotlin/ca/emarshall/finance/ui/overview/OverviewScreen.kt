@@ -240,7 +240,7 @@ private fun Hero(s: OverviewState, onPrev: () -> Unit, onNext: () -> Unit) {
         }
         Spacer(Modifier.height(4.dp))
         Text("Net saved", color = soft, style = MaterialTheme.typography.bodyMedium)
-        Text(Money.formatWhole(s.totals.netCents), color = white, fontSize = 44.sp, fontWeight = FontWeight.Bold, letterSpacing = (-1).sp)
+        Text(Money.formatWhole(ca.emarshall.finance.ui.design.animatedCents(s.totals.netCents)), color = white, fontSize = 44.sp, fontWeight = FontWeight.Bold, letterSpacing = (-1).sp)
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
             HeroStat("Income", Money.formatWhole(s.totals.incomeCents))

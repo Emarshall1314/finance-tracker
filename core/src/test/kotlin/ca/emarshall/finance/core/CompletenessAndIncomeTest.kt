@@ -183,3 +183,11 @@ class HighlightsTest {
         assertTrue(ca.emarshall.finance.core.insights.Highlights.forMonth(facts, YearMonth.of(2025, 1), emptyList()).isEmpty())
     }
 }
+
+class DailyBalanceTest {
+    @Test fun eachAccountCountsWithItsLatestBalance() {
+        fun p(acct: Long, day: Int, cents: Long) = ca.emarshall.finance.core.analytics.BalancePoint(acct, LocalDate.of(2026, 11, day), cents)
+        val series = ca.emarshall.finance.core.analytics.NetWorth.daily(listOf(p(1, 1, 1000), p(2, 2, 500), p(1, 3, 1200), p(2, 3, 400)))
+        assertEquals(listOf(LocalDate.of(2026, 11, 1) to 1000L, LocalDate.of(2026, 11, 2) to 1500L, LocalDate.of(2026, 11, 3) to 1600L), series)
+    }
+}
