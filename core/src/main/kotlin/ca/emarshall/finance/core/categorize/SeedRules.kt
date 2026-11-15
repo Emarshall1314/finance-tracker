@@ -12,7 +12,7 @@ package ca.emarshall.finance.core.categorize
  * Nothing here names a person or anything from the owner's own statements.
  */
 object SeedRules {
-    const val VERSION = 2
+    const val VERSION = 3
 
     private val rules = ArrayList<Rule>()
 
@@ -94,7 +94,7 @@ object SeedRules {
 
         // ------------------------------------------------------------------ Liquor & cannabis
         word(
-            "alcohol", "BC LIQUOR", "BCLS", "BCL", "LEGACY LIQUOR", "EVERYTHING WINE", "MARQUIS WINE", "JAK'S", "BC CANNABIS", "CITY CANNABIS",
+            "alcohol", "TOWNSHIP7", "TOWNSHIP 7", "BC LIQUOR", "BCLS", "BCL", "LEGACY LIQUOR", "EVERYTHING WINE", "MARQUIS WINE", "JAK'S", "BC CANNABIS", "CITY CANNABIS",
             "KIARO", "EVERGREEN CANNABIS", "MUSE CANNABIS", "LCBO", "SAQ", "THE BEER STORE", "BEER STORE", "COLD BEER", "WINE RACK",
             "LIQUOR DEPOT", "LIQUOR MART", "LIQUOR BARN", "TOKYO SMOKE", "FIRE & FLOWER", "SPIRITLEAF", "ONTARIO CANNABIS",
         )

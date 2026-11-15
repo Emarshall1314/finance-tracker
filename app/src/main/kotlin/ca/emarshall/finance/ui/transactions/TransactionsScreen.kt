@@ -52,6 +52,7 @@ import ca.emarshall.finance.data.TransactionRepository
 import ca.emarshall.finance.data.isTransfer
 import ca.emarshall.finance.data.toFact
 import ca.emarshall.finance.data.toFacts
+import ca.emarshall.finance.core.analytics.forCashFlow
 import kotlinx.coroutines.flow.map
 import ca.emarshall.finance.data.db.AccountEntity
 import ca.emarshall.finance.data.db.CategoryEntity
@@ -135,13 +136,18 @@ class TransactionsViewModel @Inject constructor(
         val list = r.orEmpty()
         val t = ca.emarshall.finance.core.analytics.Analytics(list.toFacts()).overall()
         val left = list.count { it.isTransfer || it.toFact().accountKind == ca.emarshall.finance.core.analytics.AccountKind.INVESTMENT }
-        ActivityTotals(t.incomeCents, t.spendingCents, left)
+        // Where the income came from, biggest first: paycheques, e-Transfers received, refunds and so on.
+        val sources = list.toFacts().mapNotNull { it.forCashFlow() }
+            .filter { it.currency == "CAD" && !it.countsAsTransfer && it.kind == ca.emarshall.finance.core.model.CategoryKind.INCOME }
+            .groupBy { it.categoryName }.map { (name, l) -> name to l.sumOf { it.amountCents } }
+            .filter { it.second != 0L }.sortedByDescending { it.second }
+        ActivityTotals(t.incomeCents, t.spendingCents, left, sources)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ActivityTotals(0, 0, 0))
 
     fun update(f: (TxFilter) -> TxFilter) { filter.value = f(filter.value) }
 }
 
-data class ActivityTotals(val incomeCents: Long, val spendingCents: Long, val notCounted: Int)
+data class ActivityTotals(val incomeCents: Long, val spendingCents: Long, val notCounted: Int, val incomeSources: List<Pair<String, Long>> = emptyList())
 
 @Composable
 fun TransactionsScreen(nav: NavController, route: TransactionsRoute, vm: TransactionsViewModel = hiltViewModel()) {
@@ -159,7 +165,7 @@ fun TransactionsScreen(nav: NavController, route: TransactionsRoute, vm: Transac
                 value = f.query, onValueChange = { q -> vm.update { it.copy(query = q) } },
                 modifier = Modifier.fillMaxWidth(), singleLine = true,
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = p.secondaryLabel) },
-                placeholder = { Text("Search a name, note or amount", color = p.secondaryLabel) },
+                placeholder = { Text("Search name or amount", color = p.secondaryLabel) },
                 shape = RoundedCornerShape(12.dp),
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = p.cardSecondary, unfocusedContainerColor = p.cardSecondary,
@@ -192,6 +198,10 @@ fun TransactionsScreen(nav: NavController, route: TransactionsRoute, vm: Transac
                     Text("Income ${Money.formatWhole(totals.incomeCents)}", color = p.positive, style = MaterialTheme.typography.labelLarge)
                     Text("Spending ${Money.formatWhole(totals.spendingCents)}", color = p.label, style = MaterialTheme.typography.labelLarge)
                 }
+                if (totals.incomeSources.size > 1) Text(
+                    "Income is " + totals.incomeSources.joinToString(" + ") { (name, cents) -> "${Money.formatWhole(cents)} ${name.lowercase()}" },
+                    color = p.secondaryLabel, style = MaterialTheme.typography.bodySmall,
+                )
                 if (totals.notCounted > 0) Text(
                     "Not counted: ${totals.notCounted} transfers between your accounts and investment-account transactions",
                     color = p.tertiaryLabel, style = MaterialTheme.typography.bodySmall,
