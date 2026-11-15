@@ -51,3 +51,28 @@ class CompletenessAndIncomeTest {
         assertEquals(listOf("groceries"), a.spendingByCategory(YearMonth.of(2026, 10)).map { it.categoryKey })
     }
 }
+
+class UnlockedMonthTest {
+    private val chequing = ca.emarshall.finance.core.statements.AccountCoverage(1, "Chequing", java.time.LocalDate.of(2026, 10, 31), drivesMonths = true, closingDay = 31)
+    private val visa = ca.emarshall.finance.core.statements.AccountCoverage(2, "Scotia Visa", java.time.LocalDate.of(2026, 10, 15), drivesMonths = false, closingDay = 15)
+    private val triangle = ca.emarshall.finance.core.statements.AccountCoverage(3, "Triangle", java.time.LocalDate.of(2026, 11, 5), drivesMonths = false, closingDay = 5)
+    private val mc = ca.emarshall.finance.core.statements.MonthCompleteness
+
+    @org.junit.Test fun chequingUnlocksTheMonthCardsOnlyMakeItFinal() {
+        val all = listOf(chequing, visa, triangle)
+        org.junit.Assert.assertEquals(java.time.YearMonth.of(2026, 10), mc.latestUnlocked(all))
+        org.junit.Assert.assertEquals(java.time.YearMonth.of(2026, 9), mc.latestComplete(all))
+        org.junit.Assert.assertEquals(listOf("Scotia Visa"), mc.waitingOn(all, java.time.YearMonth.of(2026, 10)).map { it.name })
+    }
+
+    @org.junit.Test fun withoutBankStatementsEveryAccountCounts() {
+        org.junit.Assert.assertEquals(java.time.YearMonth.of(2026, 9), mc.latestUnlocked(listOf(visa, triangle)))
+    }
+
+    @org.junit.Test fun nextCloseFollowsTheCycle() {
+        org.junit.Assert.assertEquals(java.time.LocalDate.of(2026, 11, 15), mc.nextClose(visa))
+        org.junit.Assert.assertEquals(java.time.LocalDate.of(2026, 12, 5), mc.nextClose(triangle))
+        org.junit.Assert.assertEquals(java.time.LocalDate.of(2026, 11, 30), mc.nextClose(chequing))
+        org.junit.Assert.assertEquals(java.time.LocalDate.of(2027, 2, 28), mc.nextClose(chequing.copy(coveredThrough = java.time.LocalDate.of(2027, 1, 31))))
+    }
+}

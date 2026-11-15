@@ -98,11 +98,17 @@ class StatementsRepository @Inject constructor(private val db: FinanceDatabase, 
             accs.filter { it.questradeNumber == null }.map { a ->
                 ca.emarshall.finance.core.statements.AccountCoverage(
                     a.id, a.nickname, batches.filter { it.accountId == a.id }.mapNotNull { it.periodEnd ?: it.dateTo }.maxOrNull(),
+                    // Bank accounts (where income lands) unlock a month; cards only make it final.
+                    drivesMonths = !a.typeEnum.isLiability && !a.typeEnum.isInvestment,
+                    closingDay = a.closingDay,
                 )
             }
         }
 
-    /** Latest month every statement account fully covers: the dashboard shows nothing newer. */
+    /** Latest month the dashboard shows: the bank statements are in, card statements may still be coming. */
+    val latestUnlocked: Flow<java.time.YearMonth?> = coverage.map { ca.emarshall.finance.core.statements.MonthCompleteness.latestUnlocked(it) }
+
+    /** Latest month every statement account fully covers: final numbers (insights, AI summary). */
     val latestComplete: Flow<java.time.YearMonth?> = coverage.map { ca.emarshall.finance.core.statements.MonthCompleteness.latestComplete(it) }
 
     val byAccount: Flow<List<AccountStatements>> = combine(accounts.accounts, db.imports().observeBatches()) { accs, batches ->

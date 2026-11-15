@@ -66,8 +66,10 @@ data class OverviewState(
     val hasTransactions: Boolean = false,
     /** Latest month with every account's statements in; the dashboard never shows a partial month. */
     val completeThrough: YearMonth? = null,
-    /** Accounts the next month is still waiting on. */
-    val waitingOn: List<String> = emptyList(),
+    /** Card statements the shown month still needs before its numbers are final, with when each should close. */
+    val pendingCards: List<Pair<String, LocalDate?>> = emptyList(),
+    /** The account whose statement unlocks the next month (chequing), and when it should close. */
+    val nextUnlock: Pair<String, LocalDate?>? = null,
     /** Year to date (Jan 1 to the end of [completeThrough]): spending by category, for the donut. */
     val ytd: List<CategoryTotal> = emptyList(),
     val ytdYear: Int = LocalDate.now().year,
@@ -91,7 +93,7 @@ class OverviewViewModel @Inject constructor(
 
     /** Month the user picked; null means "latest complete month". */
     private val month = MutableStateFlow<YearMonth?>(null)
-    private val complete = statements.latestComplete.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    private val complete = statements.latestUnlocked.stateIn(viewModelScope, SharingStarted.Eagerly, null)
     private val coverage = statements.coverage
 
     private val base = combine(transactions.rows, accounts.accounts, categories.categories, db.balances().observeAll(), db.imports().observeCount()) {
@@ -107,7 +109,7 @@ class OverviewViewModel @Inject constructor(
         val importCount: Int,
     )
 
-    private val monthInfo = combine(month, statements.latestComplete, coverage) { picked, done, cov -> Triple(picked, done, cov) }
+    private val monthInfo = combine(month, statements.latestUnlocked, coverage) { picked, done, cov -> Triple(picked, done, cov) }
 
     val state: StateFlow<OverviewState> = combine(base, reminders.reminders, settings.settings, monthInfo) { b, rems, s, mi ->
         val today = LocalDate.now()
@@ -154,8 +156,10 @@ class OverviewViewModel @Inject constructor(
             },
             hasTransactions = b.rows.isNotEmpty(),
             completeThrough = done,
-            waitingOn = if (done == null) emptyList() else
-                ca.emarshall.finance.core.statements.MonthCompleteness.waitingOn(cov, done.plusMonths(1)).map { it.name },
+            pendingCards = if (done == null) emptyList() else
+                ca.emarshall.finance.core.statements.MonthCompleteness.waitingOn(cov, m).map { it.name to ca.emarshall.finance.core.statements.MonthCompleteness.nextClose(it) },
+            nextUnlock = cov.filter { it.drivesMonths && it.coveredThrough != null }.minByOrNull { it.coveredThrough!! }
+                ?.let { it.name to ca.emarshall.finance.core.statements.MonthCompleteness.nextClose(it) },
             ytd = a.spendingByCategory(LocalDate.of(last.year, 1, 1), last.atEndOfMonth()),
             ytdYear = last.year,
         )

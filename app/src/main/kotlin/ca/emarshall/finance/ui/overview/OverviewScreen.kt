@@ -92,12 +92,18 @@ fun OverviewScreen(nav: NavController, vm: OverviewViewModel = hiltViewModel()) 
         if (!s.loading && s.hasTransactions) {
             item { Hero(s, vm::previousMonth, vm::nextMonth) }
             val done = s.completeThrough
-            if (done != null && s.month == done && s.waitingOn.isNotEmpty()) item {
-                Text(
-                    "${done.plusMonths(1).month.name.lowercase().replaceFirstChar { it.uppercase() }} appears once all statements are in. " +
-                        "Waiting on: ${s.waitingOn.joinToString(", ")}.",
-                    Modifier.padding(horizontal = 4.dp), style = MaterialTheme.typography.bodySmall, color = Fin.palette.secondaryLabel,
+            fun monthName(m: YearMonth) = m.month.name.lowercase().replaceFirstChar { it.uppercase() }
+            fun around(d: java.time.LocalDate?) = d?.let { " (closes around ${it.format(SHORT_DAY)})" } ?: ""
+            if (s.pendingCards.isNotEmpty()) item {
+                val cards = s.pendingCards.joinToString(" and ") { (name, close) -> name + around(close) }
+                ca.emarshall.finance.ui.design.Notice(
+                    "Card spending for ${monthName(s.month)} isn't final yet. This month updates once your " +
+                        "$cards statement${if (s.pendingCards.size > 1) "s are" else " is"} imported.",
                 )
+            }
+            val next = s.nextUnlock
+            if (done != null && s.month == done && next != null) item {
+                ca.emarshall.finance.ui.design.Footnote("${monthName(done.plusMonths(1))} unlocks when your ${next.first} statement arrives${around(next.second)}.")
             }
 
             if (attention.first.isNotEmpty() || attention.second > 0 || stale > 0) item {
@@ -193,7 +199,7 @@ private fun Hero(s: OverviewState, onPrev: () -> Unit, onNext: () -> Unit) {
             IconButton(onClick = onPrev, modifier = Modifier.size(32.dp)) {
                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Previous month", tint = white)
             }
-            Text(s.month.pretty(), Modifier.weight(1f), color = white, style = MaterialTheme.typography.titleSmall,
+            Text(s.month.pretty() + if (s.pendingCards.isNotEmpty()) " · not final" else "", Modifier.weight(1f), color = white, style = MaterialTheme.typography.titleSmall,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             val canNext = s.month < (s.completeThrough ?: YearMonth.now())
             IconButton(onClick = onNext, enabled = canNext, modifier = Modifier.size(32.dp)) {

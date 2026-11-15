@@ -269,6 +269,8 @@ Requested by the owner after the first build:
 - **Any AI.** The coach works with the AI the owner chooses: Claude (official Anthropic SDK) or any service
   with an OpenAI-compatible Chat Completions API (OpenAI, Google Gemini, Mistral, DeepSeek, Groq,
   OpenRouter, or a custom HTTPS endpoint). The rule-3 exception now covers that one chosen host, HTTPS only.
-- **Complete months only.** The dashboard shows a month only once every statement account covers it.
+- **Months unlock with the bank statement.** The dashboard shows a month once the bank (chequing) statements
+  cover it. Until the card statements for it are in, it's marked "not final" with a note naming the card
+  statements it's waiting on. Insights and the AI summary still use only months every account covers.
 - **Income from bank accounts only.** Card refunds reduce spending; activity inside investment accounts is
   neither income nor spending.
