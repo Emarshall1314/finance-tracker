@@ -21,6 +21,7 @@ import ca.emarshall.finance.data.CategoryRepository
 import ca.emarshall.finance.data.TransactionRepository
 import ca.emarshall.finance.data.db.TxRow
 import ca.emarshall.finance.data.toFact
+import ca.emarshall.finance.data.countsOn
 import ca.emarshall.finance.ui.CategoryRoute
 import ca.emarshall.finance.ui.SHORT_MONTH
 import ca.emarshall.finance.ui.TransactionRoute
@@ -69,7 +70,7 @@ class CategoryDetailViewModel @Inject constructor(
         val months = (11 downTo 0).map { endMonth.minusMonths(it.toLong()) }
         val series = months.map { m -> m to (a.spendingByCategory(m).firstOrNull()?.cents ?: 0L) }
         val active = series.filter { it.first != month && it.second != 0L }
-        val inMonth = mine.filter { YearMonth.from(it.date) == month }
+        val inMonth = mine.filter { YearMonth.from(it.countsOn) == month }
         CategoryDetail(
             name = cat.name,
             month = month,

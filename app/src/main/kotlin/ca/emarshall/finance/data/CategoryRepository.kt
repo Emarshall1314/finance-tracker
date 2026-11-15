@@ -24,6 +24,13 @@ import javax.inject.Singleton
 val CategoryEntity.ruleKey: String get() = key ?: "id:$id"
 val CategoryEntity.kindEnum: CategoryKind get() = runCatching { CategoryKind.valueOf(kind) }.getOrDefault(CategoryKind.EXPENSE)
 
+/**
+ * The stored rule as the core sees it. A negative stored amount means money coming in (a roommate's share);
+ * that keeps the table as it was, with no new column.
+ */
+fun AmountRuleEntity.toCore(categoryKey: String = "id:$categoryId") =
+    AmountRule(id, name, Math.abs(amountCents), categoryKey, toleranceCents, dayOfMonth, incoming = amountCents < 0)
+
 /** Categorizer plus lookups between category keys and database ids. */
 class CategorizerSnapshot(val categorizer: Categorizer, private val byKey: Map<String, CategoryEntity>) {
     /** [useAmountRules] is false for investment accounts: "rent is $1,800" never applies inside Questrade. */
@@ -77,7 +84,7 @@ class CategoryRepository @Inject constructor(
         val rules = SeedRules.ALL + mine
         val amountRules = dao.amountRules().mapNotNull { r ->
             val cat = byId[r.categoryId] ?: return@mapNotNull null
-            AmountRule(r.id, r.name, r.amountCents, cat.ruleKey, r.toleranceCents, r.dayOfMonth)
+            r.toCore(cat.ruleKey)
         }
         val transferKeys = cats.filter { it.kindEnum == CategoryKind.TRANSFER }.map { it.ruleKey }.toSet()
         return CategorizerSnapshot(Categorizer(rules, amountRules, transferKeys), cats.associateBy { it.ruleKey })

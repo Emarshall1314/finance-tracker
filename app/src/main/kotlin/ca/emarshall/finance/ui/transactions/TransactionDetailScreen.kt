@@ -152,6 +152,16 @@ fun TransactionDetailScreen(nav: NavController, vm: TransactionDetailViewModel =
             }
             if (tx.categoryLocked) ca.emarshall.finance.ui.design.Footnote("You set this category, so rules won't change it.")
             val investment = runCatching { ca.emarshall.finance.core.model.AccountType.valueOf(tx.accountType) }.getOrNull()?.isInvestment == true
+            if (tx.amountCents > 0 && tx.transferLinkId == null && !investment && tx.categoryKind != "TRANSFER") {
+                Group {
+                    ca.emarshall.finance.ui.design.GroupRow(
+                        "I receive this amount regularly",
+                        subtitle = "Like a roommate's share of the rent: count every ${ca.emarshall.finance.core.money.Money.format(tx.amountCents)} that comes in the same way",
+                        icon = androidx.compose.material.icons.Icons.Filled.Home, iconColor = p.chart[4], showChevron = true, divider = false,
+                        onClick = { nav.navigate(ca.emarshall.finance.ui.KnownPaymentEditRoute(amountCents = tx.amountCents, day = tx.date.dayOfMonth, incoming = true)) },
+                    )
+                }
+            }
             if (tx.amountCents < 0 && tx.transferLinkId == null && !investment) {
                 Group {
                     ca.emarshall.finance.ui.design.GroupRow(

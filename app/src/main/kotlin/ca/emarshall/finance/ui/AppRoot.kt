@@ -97,7 +97,7 @@ import kotlin.reflect.KClass
 @Serializable object TrendsRoute
 @Serializable object BackupRoute
 /** [amountCents] and [day] prefill a new one (from a transaction). */
-@Serializable data class KnownPaymentEditRoute(val id: Long = -1, val amountCents: Long = 0, val day: Int = 0)
+@Serializable data class KnownPaymentEditRoute(val id: Long = -1, val amountCents: Long = 0, val day: Int = 0, val incoming: Boolean = false)
 
 sealed interface PendingNav {
     data class ImportFiles(val uris: List<String>) : PendingNav

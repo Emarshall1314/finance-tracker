@@ -19,8 +19,27 @@ import java.time.LocalDate
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * Known payments with a day of the month (rent on the 1st), by category id. A payment that matches one
+ * counts in the month it is for, even when it was made a day or two into the neighbouring month.
+ * Kept current by [TransactionRepository.rows], which every screen's numbers come from.
+ */
+object MonthShift {
+    @Volatile var rules: List<Pair<Long, ca.emarshall.finance.core.categorize.AmountRule>> = emptyList()
+
+    /** The date [row] counts on for monthly totals; its own date unless a known payment says otherwise. */
+    fun dateFor(row: TxRow): java.time.LocalDate {
+        if (row.transferLinkId != null) return row.date
+        val rule = rules.firstOrNull { (categoryId, r) -> categoryId == row.categoryId && r.matches(row.amountCents, row.date) }?.second ?: return row.date
+        return rule.countsOn(row.date)
+    }
+}
+
+/** The date this row counts on for monthly totals (see [MonthShift]). Lists still show [TxRow.date]. */
+val TxRow.countsOn: java.time.LocalDate get() = MonthShift.dateFor(this)
+
 fun TxRow.toFact() = TxFact(
-    id = id, accountId = accountId, date = date, amountCents = amountCents, currency = currency,
+    id = id, accountId = accountId, date = countsOn, amountCents = amountCents, currency = currency,
     categoryKey = categoryKey ?: categoryId?.let { "id:$it" } ?: if (amountCents >= 0) "other_income" else "other",
     categoryName = categoryName ?: if (amountCents >= 0) "Other Income" else "Other",
     kind = categoryKind?.let { runCatching { CategoryKind.valueOf(it) }.getOrNull() }
@@ -69,7 +88,11 @@ class TransactionRepository @Inject constructor(
     private val accountDao: AccountDao,
     private val categories: CategoryRepository,
 ) {
-    val rows: Flow<List<TxRow>> = dao.observeAllRows()
+    /** Every transaction. Emits again when known payments change, because they decide which month some rows count in. */
+    val rows: Flow<List<TxRow>> = kotlinx.coroutines.flow.combine(dao.observeAllRows(), categories.amountRules) { rows, rules ->
+        MonthShift.rules = rules.filter { it.dayOfMonth != null }.map { it.categoryId to it.toCore() }
+        rows
+    }
     val facts: Flow<List<TxFact>> = rows.map { list -> list.map { it.toFact() } }
     val latestDates = dao.observeLatestDates()
     val count = dao.observeCount()

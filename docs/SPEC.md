@@ -288,4 +288,7 @@ Requested by the owner after the first build:
 - **Backup & restore.** A password-encrypted file (AES-256-GCM, PBKDF2 key) with every table and,
   optionally, the statement PDFs. Made only when the owner asks and saved where they choose; never
   automatic, never uploaded by the app. Tokens and keys are excluded. Restore replaces everything.
+- **Known payments also cover money coming in** (a roommate's share of the rent): put in a spending
+  category it counts against that spending instead of as income. A known payment with a day of the
+  month counts in the month it is for, so rent paid on the 31st for the 1st doesn't double up a month.
 

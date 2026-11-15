@@ -48,4 +48,26 @@ class AmountRuleTest {
         assertEquals("id:99", c.categorize("X", "X", -180_000))
         assertEquals("id:7", c.categorize("X", "X", -180_250))
     }
+
+    @Test fun moneyComingInCanBeAKnownPaymentToo() {
+        val share = AmountRule(3, "Roommate", 110_000, "id:99", incoming = true)
+        assertTrue(share.matches(110_000, LocalDate.of(2026, 10, 1)))
+        assertFalse(share.matches(-110_000, LocalDate.of(2026, 10, 1)))
+        assertFalse(rent.matches(180_000, null))
+        val c = Categorizer(SeedRules.ALL, listOf(rent, share))
+        // The roommate's e-Transfer goes against rent instead of counting as income.
+        assertEquals("id:99", c.categorize("Deposit 12345678 Free Interac E-Transfer", "Interac e-Transfer received", 110_000, LocalDate.of(2026, 10, 2)))
+        assertEquals("other_income", c.categorize("Deposit 12345678 Free Interac E-Transfer", "Interac e-Transfer received", 5_000, LocalDate.of(2026, 10, 2)))
+    }
+
+    @Test fun rentPaidADayEarlyCountsInTheMonthItIsFor() {
+        val first = rent.copy(dayOfMonth = 1)
+        assertEquals(LocalDate.of(2026, 11, 1), first.countsOn(LocalDate.of(2026, 10, 31))) // November's rent
+        assertEquals(LocalDate.of(2026, 10, 1), first.countsOn(LocalDate.of(2026, 10, 1)))
+        assertEquals(LocalDate.of(2026, 10, 3), first.countsOn(LocalDate.of(2026, 10, 3))) // already in the right month: untouched
+        assertEquals(LocalDate.of(2027, 1, 1), first.countsOn(LocalDate.of(2026, 12, 30)))
+        // Due at month end, paid on the 1st of the next month: counts for the month just ended.
+        assertEquals(LocalDate.of(2026, 10, 31), rent.copy(dayOfMonth = 31).countsOn(LocalDate.of(2026, 11, 1)))
+        assertEquals(LocalDate.of(2026, 10, 31), rent.countsOn(LocalDate.of(2026, 10, 31))) // no day set: never moves
+    }
 }

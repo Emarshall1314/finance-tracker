@@ -34,6 +34,7 @@ import ca.emarshall.finance.data.db.AmountRuleEntity
 import ca.emarshall.finance.data.db.CategoryEntity
 import ca.emarshall.finance.data.db.TxRow
 import ca.emarshall.finance.data.kindEnum
+import ca.emarshall.finance.data.toCore
 import ca.emarshall.finance.ui.KnownPaymentEditRoute
 import ca.emarshall.finance.ui.SHORT_DAY
 import ca.emarshall.finance.ui.TransactionRoute
@@ -69,7 +70,6 @@ fun ordinal(day: Int): String = day.toString() + when {
     else -> "th"
 }
 
-private fun AmountRuleEntity.toCore() = AmountRule(id, name, amountCents, "id:$categoryId", toleranceCents, dayOfMonth)
 
 /**
  * Payments this rule would claim, roughly as the categorizer sees them: money out of a bank or card account,
@@ -127,7 +127,8 @@ class KnownPaymentsViewModel @Inject constructor(categories: CategoryRepository,
 }
 
 fun describe(r: AmountRuleEntity): String = buildString {
-    append(Money.format(r.amountCents))
+    append(Money.format(Math.abs(r.amountCents)))
+    if (r.amountCents < 0) append(" received")
     if (r.toleranceCents > 0) append(" (± ${Money.formatWhole(r.toleranceCents)})")
     append(r.dayOfMonth?.let { " · around the ${ordinal(it)}" } ?: " · any day")
 }
@@ -194,7 +195,7 @@ class KnownPaymentEditViewModel @Inject constructor(
     val route = savedState.toRoute<KnownPaymentEditRoute>()
     // Spending categories, plus the two "putting money away" ones (e.g. "$500 to savings every payday").
     val spendingCategories = categories.categories.map { c ->
-        c.filter { it.kindEnum == CategoryKind.EXPENSE || it.key == DefaultCategories.SAVINGS_TRANSFER || it.key == DefaultCategories.INVESTMENTS_TRANSFER }
+        c.filter { it.kindEnum != CategoryKind.TRANSFER || it.key == DefaultCategories.SAVINGS_TRANSFER || it.key == DefaultCategories.INVESTMENTS_TRANSFER }
     }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val existing = MutableStateFlow<AmountRuleEntity?>(null)
@@ -212,10 +213,11 @@ class KnownPaymentEditViewModel @Inject constructor(
         if (route.id > 0) viewModelScope.launch { existing.value = categories.amountRule(route.id); loaded.value = true }
     }
 
-    fun save(name: String, amountCents: Long, toleranceCents: Long, day: Int?, category: CategoryEntity?) = viewModelScope.launch {
+    fun save(name: String, amountCents: Long, toleranceCents: Long, day: Int?, category: CategoryEntity?, incoming: Boolean) = viewModelScope.launch {
         busy.value = true
         val rule = AmountRuleEntity(
-            id = existing.value?.id ?: 0, name = name.trim(), amountCents = amountCents, toleranceCents = toleranceCents,
+            // Stored negative when it's money coming in.
+            id = existing.value?.id ?: 0, name = name.trim(), amountCents = if (incoming) -amountCents else amountCents, toleranceCents = toleranceCents,
             categoryId = category?.id ?: 0, dayOfMonth = day,
         )
         val n = categories.saveAmountRule(rule, newCategoryName = if (category == null) name else null)
@@ -237,7 +239,7 @@ private val DAYS: List<Int?> = listOf<Int?>(null) + (1..31).toList()
 fun KnownPaymentEditScreen(nav: NavController, vm: KnownPaymentEditViewModel = hiltViewModel()) {
     val loaded by vm.loaded.collectAsStateWithLifecycle()
     val existing by vm.existing.collectAsStateWithLifecycle()
-    val cats by vm.spendingCategories.collectAsStateWithLifecycle()
+    val allCats by vm.spendingCategories.collectAsStateWithLifecycle()
     val preview by vm.preview.collectAsStateWithLifecycle()
     val result by vm.result.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
@@ -251,27 +253,42 @@ fun KnownPaymentEditScreen(nav: NavController, vm: KnownPaymentEditViewModel = h
     var categoryId by remember { mutableStateOf<Long?>(null) }
     var categoryTouched by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var incoming by remember { mutableStateOf(vm.route.incoming) }
 
     LaunchedEffect(existing) {
         existing?.let { e ->
-            name = e.name; amount = Money.fromCents(e.amountCents).toPlainString(); tolerance = e.toleranceCents
+            incoming = e.amountCents < 0
+            name = e.name; amount = Money.fromCents(Math.abs(e.amountCents)).toPlainString(); tolerance = e.toleranceCents
             day = e.dayOfMonth; categoryId = e.categoryId; categoryTouched = true
         }
     }
     // Until the user picks one, use the category with the same name as the payment if there is one.
+    // Money you pay goes in a spending category. Money you receive can go against spending (a roommate's share of the rent) or count as income.
+    val cats = allCats.filter { c -> if (incoming) c.kindEnum != CategoryKind.TRANSFER else c.kindEnum != CategoryKind.INCOME }
     val sameName = cats.firstOrNull { it.name.equals(name.trim(), ignoreCase = true) }
-    val chosen = if (categoryTouched) cats.firstOrNull { it.id == categoryId } else sameName
+    // Money coming in most often belongs against the rent, so offer that first.
+    val chosen = if (categoryTouched) cats.firstOrNull { it.id == categoryId }
+    else sameName ?: if (incoming) cats.firstOrNull { it.kindEnum == CategoryKind.EXPENSE && it.name.contains("rent", ignoreCase = true) } else null
     val cents = runCatching { Money.parse(amount) }.getOrNull()?.let { Math.abs(it) }?.takeIf { it > 0 }
-    LaunchedEffect(cents, tolerance, day) {
-        vm.draft.value = cents?.let { AmountRule(name = "", amountCents = it, categoryKey = "", toleranceCents = tolerance, dayOfMonth = day) }
+    LaunchedEffect(cents, tolerance, day, incoming) {
+        vm.draft.value = cents?.let { AmountRule(name = "", amountCents = it, categoryKey = "", toleranceCents = tolerance, dayOfMonth = day, incoming = incoming) }
     }
     LaunchedEffect(result) { if (result == "deleted") nav.popBackStack() }
 
     DetailScreen(if (existing != null) existing!!.name else "New known payment", onBack = { nav.popBackStack() }) {
         if (!loaded) return@DetailScreen
         item {
+            ca.emarshall.finance.ui.design.Segmented(listOf(false, true), incoming, { if (it) "I receive this" else "I pay this" }, { incoming = it; categoryTouched = false })
+        }
+        if (incoming) item {
+            Footnote(
+                "For money that comes in regularly, like a roommate's share of the rent. Put it in a spending category (Rent) and it " +
+                    "counts against that spending: $1,800 of rent with $1,100 back from a roommate shows as $700. Put it in an income category to count it as income.",
+            )
+        }
+        item {
             FinCard {
-                FinTextField(name, { name = it }, "What is it?", placeholder = "Rent")
+                FinTextField(name, { name = it }, "What is it?", placeholder = if (incoming) "Roommate's share of rent" else "Rent")
                 FinTextField(
                     amount, { amount = it }, "Amount each time", placeholder = "1800.00",
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -285,7 +302,7 @@ fun KnownPaymentEditScreen(nav: NavController, vm: KnownPaymentEditViewModel = h
                     icon = Icons.Default.Tune, iconColor = p.chart[2],
                 )
                 MenuRow(
-                    "Usually paid", day, DAYS, { d -> d?.let { "Around the ${ordinal(it)}" } ?: "Any day" }, { day = it },
+                    if (incoming) "Usually arrives" else "Usually paid", day, DAYS, { d -> d?.let { "Around the ${ordinal(it)}" } ?: "Any day" }, { day = it },
                     icon = Icons.Default.CalendarMonth, iconColor = p.chart[3],
                 )
                 MenuRow(
@@ -295,7 +312,12 @@ fun KnownPaymentEditScreen(nav: NavController, vm: KnownPaymentEditViewModel = h
                 )
             }
         }
-        item { Footnote("\"Around\" means within ${AmountRule.DEFAULT_DAY_WINDOW} days either side, so rent paid a day or two early still counts.") }
+        item {
+            Footnote(
+                "\"Around\" means within ${AmountRule.DEFAULT_DAY_WINDOW} days either side. With a day set, a payment made just before or after the " +
+                    "month turns counts in the month it's for: rent due on the 1st and paid on the 31st is next month's rent, so no month shows two rents.",
+            )
+        }
 
         val matches = preview
         if (cents != null && matches != null) {
@@ -306,7 +328,7 @@ fun KnownPaymentEditScreen(nav: NavController, vm: KnownPaymentEditViewModel = h
                     shown.forEachIndexed { i, t ->
                         GroupRow(
                             t.merchant, subtitle = "${t.date.format(SHORT_DAY)} ${t.date.year} · ${t.accountNickname} · now ${t.categoryName ?: "Other"}",
-                            value = Money.format(-t.amountCents), divider = i < shown.size - 1,
+                            value = Money.format(Math.abs(t.amountCents)), divider = i < shown.size - 1,
                             onClick = { nav.navigate(TransactionRoute(t.id)) },
                         )
                     }
@@ -318,7 +340,7 @@ fun KnownPaymentEditScreen(nav: NavController, vm: KnownPaymentEditViewModel = h
         item {
             val ok = name.isNotBlank() && cents != null
             PrimaryButton(
-                "Save", { if (cents != null) vm.save(name, cents, tolerance, day, chosen) },
+                "Save", { if (cents != null) vm.save(name, cents, tolerance, day, chosen, incoming) },
                 enabled = ok && !busy, loading = busy,
             )
         }
