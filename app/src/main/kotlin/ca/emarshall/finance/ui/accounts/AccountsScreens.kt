@@ -2,6 +2,9 @@ package ca.emarshall.finance.ui.accounts
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.material.icons.automirrored.filled.ShowChart
+import androidx.compose.material.icons.filled.AccountBalance
+import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -70,18 +73,32 @@ fun AccountsScreen(nav: NavController, vm: AccountsViewModel = hiltViewModel()) 
             ExtendedFloatingActionButton(onClick = { nav.navigate(AccountEditRoute()) }, icon = { Icon(Icons.Default.Add, null) }, text = { Text("Add account") })
         },
     ) { pad ->
-        Column(Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState())) {
+        Column(Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             val list = accounts ?: return@Column
-            if (list.isEmpty()) EmptyState("Add your Scotiabank and Canadian Tire accounts. Questrade accounts appear automatically when you connect.")
-            list.forEach { a ->
-                ListItem(
-                    headlineContent = { Text(a.nickname) },
-                    supportingContent = {
-                        Text(listOfNotNull(a.institutionEnum.displayName, a.typeEnum.displayName, a.last4?.let { "••$it" }, a.currency.takeIf { it != "CAD" }).joinToString(" · "))
-                    },
-                    modifier = Modifier.clickable { nav.navigate(AccountEditRoute(a.id)) },
-                )
-                HorizontalDivider()
+            if (list.isEmpty()) EmptyState("Add your Scotiabank and Canadian Tire accounts, or just import statements: accounts are created automatically. Questrade accounts appear when you connect.")
+            list.groupBy { it.institutionEnum }.forEach { (inst, accs) ->
+                ca.emarshall.finance.ui.design.SectionHeader(inst.displayName)
+                ca.emarshall.finance.ui.design.Group {
+                    accs.forEachIndexed { i, a ->
+                        ca.emarshall.finance.ui.design.GroupRow(
+                            a.nickname,
+                            subtitle = listOfNotNull(a.typeEnum.displayName, a.last4?.let { "••$it" }, a.currency.takeIf { it != "CAD" },
+                                a.questradeNumber?.let { "synced" }).joinToString(" · "),
+                            icon = when (inst) {
+                                ca.emarshall.finance.core.model.Institution.QUESTRADE -> androidx.compose.material.icons.Icons.AutoMirrored.Filled.ShowChart
+                                else -> if (a.typeEnum.isLiability) androidx.compose.material.icons.Icons.Default.CreditCard else androidx.compose.material.icons.Icons.Default.AccountBalance
+                            },
+                            iconColor = when (inst) {
+                                ca.emarshall.finance.core.model.Institution.SCOTIABANK -> androidx.compose.ui.graphics.Color(0xFFEC111A)
+                                ca.emarshall.finance.core.model.Institution.CANADIAN_TIRE -> androidx.compose.ui.graphics.Color(0xFFD52B1E).copy(alpha = 0.85f)
+                                ca.emarshall.finance.core.model.Institution.QUESTRADE -> androidx.compose.ui.graphics.Color(0xFF34C77B)
+                                else -> androidx.compose.ui.graphics.Color(0xFF8E8E93)
+                            },
+                            showChevron = true, divider = i < accs.size - 1,
+                            onClick = { nav.navigate(AccountEditRoute(a.id)) },
+                        )
+                    }
+                }
             }
         }
     }

@@ -48,14 +48,22 @@ fun BillsScreen(nav: NavController, vm: BillsViewModel = hiltViewModel()) {
             EmptyState("Nothing recurring yet. A charge shows up here after the same merchant charges a similar amount about monthly, 3 times.")
             return@Column
         }
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             val total = list.filter { it.currency == "CAD" }.sumOf { it.monthlyCostCents }
-            Text("About ${Money.format(total)} a month", style = MaterialTheme.typography.headlineSmall)
-            list.forEach { b ->
-                SectionCard(b.merchant) {
-                    LabeledRow("Monthly cost") { MoneyText(b.typicalAmountCents, b.currency, colored = false) }
-                    LabeledRow("Next expected") { Text(b.nextExpected.pretty()) }
-                    LabeledRow("Seen") { Text("${b.occurrences} times, last ${b.lastDate.pretty()}") }
+            ca.emarshall.finance.ui.design.HeroCard(ca.emarshall.finance.ui.theme.Fin.palette.heroGradient) {
+                val white = androidx.compose.ui.graphics.Color.White
+                Text("Every month", color = white.copy(alpha = 0.8f), style = MaterialTheme.typography.bodyMedium)
+                Text(Money.formatWhole(total), color = white, style = MaterialTheme.typography.headlineLarge)
+                Text("${Money.formatWhole(total * 12)} a year across ${list.size} bills and subscriptions", color = white.copy(alpha = 0.85f), style = MaterialTheme.typography.bodyMedium)
+            }
+            ca.emarshall.finance.ui.design.Group {
+                list.forEachIndexed { i, b ->
+                    ca.emarshall.finance.ui.design.GroupRow(
+                        b.merchant,
+                        subtitle = "Next ${b.nextExpected.pretty()} · seen ${b.occurrences}×",
+                        value = Money.format(b.monthlyCostCents, b.currency, true),
+                        divider = i < list.size - 1,
+                    )
                 }
             }
         }
