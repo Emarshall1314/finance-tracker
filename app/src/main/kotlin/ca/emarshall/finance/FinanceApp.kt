@@ -52,7 +52,9 @@ class FinanceApp : Application(), Configuration.Provider {
                 if (done < 1) imports.get().repairMisfiledImports()
                 // Accounts set up from statements before the app asked: ask once now.
                 if (done < 2) accounts.get().markStatementAccountsUnconfirmed()
-                if (done < 2) settings.get().setRepairVersion(2)
+                // Once: transfers out of chequing that aren't paired become To/From Savings.
+                if (done < 3) categories.get().recategorizeAll()
+                if (done < 3) settings.get().setRepairVersion(3)
             } catch (e: Exception) {
                 AppLog.w("FinanceApp", "Startup task failed: ${e.javaClass.simpleName}")
             }

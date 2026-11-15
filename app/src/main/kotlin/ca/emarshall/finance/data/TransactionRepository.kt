@@ -43,11 +43,20 @@ fun TxRow.toFact() = TxFact(
  */
 fun List<TxRow>.toFacts(): List<TxFact> {
     val byId = associateBy { it.id }
+    fun type(r: TxRow) = runCatching { AccountType.valueOf(r.accountType) }.getOrNull()
     return map { r ->
-        val linkedToInvestment = r.transferLinkId?.let { byId[it] }?.let { other ->
-            runCatching { ca.emarshall.finance.core.model.AccountType.valueOf(other.accountType) }.getOrNull()?.isInvestment == true
-        } == true
-        r.toFact().copy(toInvestments = r.categoryKey == "investments_transfer" || linkedToInvestment)
+        val other = r.transferLinkId?.let { byId[it] }?.let(::type)
+        val own = type(r)
+        val setAside = when {
+            own == null || own.isInvestment || own.isLiability -> null
+            r.categoryKey == ca.emarshall.finance.core.categorize.DefaultCategories.INVESTMENTS_TRANSFER || other?.isInvestment == true ->
+                ca.emarshall.finance.core.analytics.SetAside.INVESTMENTS
+            // Counted from the chequing side only, so a tracked savings account's own rows don't count twice.
+            own != AccountType.SAVINGS && (r.categoryKey == ca.emarshall.finance.core.categorize.DefaultCategories.SAVINGS_TRANSFER || other == AccountType.SAVINGS) ->
+                ca.emarshall.finance.core.analytics.SetAside.SAVINGS
+            else -> null
+        }
+        r.toFact().copy(setAside = setAside)
     }
 }
 
@@ -97,6 +106,7 @@ class TransactionRepository @Inject constructor(
             val key = when {
                 types.any { it == AccountType.CREDIT_CARD || it == AccountType.LINE_OF_CREDIT } -> "card_payment"
                 types.any { it.isInvestment } -> "investments_transfer"
+                types.any { it == AccountType.SAVINGS } -> ca.emarshall.finance.core.categorize.DefaultCategories.SAVINGS_TRANSFER
                 else -> "between_accounts"
             }
             val catId = snap.idOf(key)

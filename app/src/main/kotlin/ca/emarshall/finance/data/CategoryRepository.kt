@@ -27,8 +27,15 @@ val CategoryEntity.kindEnum: CategoryKind get() = runCatching { CategoryKind.val
 /** Categorizer plus lookups between category keys and database ids. */
 class CategorizerSnapshot(val categorizer: Categorizer, private val byKey: Map<String, CategoryEntity>) {
     /** [useAmountRules] is false for investment accounts: "rent is $1,800" never applies inside Questrade. */
-    fun categoryIdFor(raw: String, merchant: String, amountCents: Long, date: java.time.LocalDate? = null, useAmountRules: Boolean = true): Long? =
-        byKey[categorizer.categorize(raw, merchant, amountCents, date, useAmountRules)]?.id
+    fun categoryIdFor(
+        raw: String, merchant: String, amountCents: Long, date: java.time.LocalDate? = null, useAmountRules: Boolean = true,
+        /** In a chequing account, a transfer between "my accounts" is a move to or from savings. */
+        chequing: Boolean = false,
+    ): Long? {
+        val key = categorizer.categorize(raw, merchant, amountCents, date, useAmountRules)
+        val adjusted = if (chequing && key == DefaultCategories.BETWEEN_ACCOUNTS && DefaultCategories.SAVINGS_TRANSFER in byKey) DefaultCategories.SAVINGS_TRANSFER else key
+        return byKey[adjusted]?.id
+    }
     fun idOf(key: String): Long? = byKey[key]?.id
 }
 
@@ -43,9 +50,18 @@ class CategoryRepository @Inject constructor(
     val amountRules: Flow<List<AmountRuleEntity>> = dao.observeAmountRules()
     private val seedLock = Mutex()
 
-    /** Inserts the default categories and seed rules the first time. */
+    @Volatile private var builtInsChecked = false
+
+    /** Inserts the default categories and seed rules the first time, and built-in categories added in later versions. */
     suspend fun ensureSeeded() = seedLock.withLock {
-        if (dao.count() > 0) return@withLock
+        if (dao.count() > 0) {
+            if (!builtInsChecked) {
+                // Unique key: existing ones are ignored, new built-ins (e.g. To/From Savings) are added.
+                dao.insertAll(DefaultCategories.ALL.map { CategoryEntity(key = it.key, name = it.name, kind = it.kind.name, icon = it.icon, color = it.color, builtIn = true) })
+                builtInsChecked = true
+            }
+            return@withLock
+        }
         db.withTransaction {
             dao.insertAll(DefaultCategories.ALL.map { CategoryEntity(key = it.key, name = it.name, kind = it.kind.name, icon = it.icon, color = it.color, builtIn = true) })
             val ids = dao.all().associate { (it.key ?: "") to it.id }
@@ -130,8 +146,9 @@ class CategoryRepository @Inject constructor(
     suspend fun recategorizeAll(): Int {
         val snap = snapshot()
         val investment = investmentAccountIds()
+        val chequing = db.accounts().all().filter { it.type == ca.emarshall.finance.core.model.AccountType.CHEQUING.name }.map { it.id }.toSet()
         val changed = txDao.all().filter { !it.categoryLocked && it.transferLinkId == null }.mapNotNull { t ->
-            val id = snap.categoryIdFor(t.rawDescription, t.merchant, t.amountCents, t.date, useAmountRules = t.accountId !in investment)
+            val id = snap.categoryIdFor(t.rawDescription, t.merchant, t.amountCents, t.date, useAmountRules = t.accountId !in investment, chequing = t.accountId in chequing)
             if (id != null && id != t.categoryId) t.copy(categoryId = id) else null
         }
         if (changed.isNotEmpty()) txDao.updateAll(changed)

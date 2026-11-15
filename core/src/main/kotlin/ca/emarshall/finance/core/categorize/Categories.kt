@@ -34,7 +34,16 @@ object DefaultCategories {
         CategorySeed("card_payment", "Card Payment", CategoryKind.TRANSFER, "credit_card", 0xFF607D8B),
         CategorySeed("between_accounts", "Between My Accounts", CategoryKind.TRANSFER, "swap_horiz", 0xFF78909C),
         CategorySeed("investments_transfer", "To/From Investments", CategoryKind.TRANSFER, "account_balance", 0xFF90A4AE),
+        CategorySeed(SAVINGS_TRANSFER, "To/From Savings", CategoryKind.TRANSFER, "savings", 0xFF26A69A),
     )
+
+    /**
+     * Money moved between chequing and a savings account. A transfer out of chequing that isn't matched to
+     * another account the app tracks is assumed to go to savings (the savings account has no statements).
+     */
+    const val SAVINGS_TRANSFER = "savings_transfer"
+    const val BETWEEN_ACCOUNTS = "between_accounts"
+    const val INVESTMENTS_TRANSFER = "investments_transfer"
 
     const val FALLBACK_EXPENSE = "other"
     const val FALLBACK_INCOME = "other_income"

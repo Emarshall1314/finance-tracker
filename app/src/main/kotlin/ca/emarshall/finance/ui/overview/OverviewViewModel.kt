@@ -57,8 +57,10 @@ data class OverviewState(
     val series: List<MonthTotals> = emptyList(),
     /** Biggest spending categories for each month in [series], for the chart's tap details. */
     val seriesCategories: Map<YearMonth, List<Pair<CategoryTotal, Long?>>> = emptyMap(),
-    /** Net moved into investment accounts (Questrade) in each month of [series]; part of what was saved. */
-    val seriesInvested: Map<YearMonth, Long> = emptyMap(),
+    /** Net moved from chequing to savings and investments in each month of [series]; part of what was saved. */
+    val seriesSetAside: Map<YearMonth, ca.emarshall.finance.core.analytics.SetAsideTotals> = emptyMap(),
+    /** The same for the month in the hero. */
+    val setAside: ca.emarshall.finance.core.analytics.SetAsideTotals? = null,
     val topMerchants: List<MerchantTotal> = emptyList(),
     val feesCents: Long = 0,
     val upcomingBills: List<RecurringSeries> = emptyList(),
@@ -142,7 +144,8 @@ class OverviewViewModel @Inject constructor(
             totals = a.monthTotals(m),
             categories = a.spendingByCategory(m).map { it to catIdByKey[it.categoryKey] },
             series = a.monthSeries(last, 12).dropWhile { it.incomeCents == 0L && it.spendingCents == 0L },
-            seriesInvested = a.monthSeries(last, 12).associate { mt -> mt.month to a.investedIn(mt.month) },
+            seriesSetAside = a.monthSeries(last, 12).associate { mt -> mt.month to a.setAsideIn(mt.month) },
+            setAside = a.setAsideIn(m),
             seriesCategories = a.monthSeries(last, 12).associate { mt ->
                 mt.month to a.spendingByCategory(mt.month).take(3).map { it to catIdByKey[it.categoryKey] }
             },

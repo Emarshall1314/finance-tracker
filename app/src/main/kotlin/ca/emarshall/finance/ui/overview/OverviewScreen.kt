@@ -211,6 +211,18 @@ private fun Hero(s: OverviewState, onPrev: () -> Unit, onNext: () -> Unit) {
             HeroStat("Spending", Money.formatWhole(s.totals.spendingCents))
             HeroStat("Saved", s.totals.savingsRatePercent?.let { "$it%" } ?: "–")
         }
+        s.setAside?.takeIf { it.totalCents != 0L }?.let { a ->
+            Spacer(Modifier.height(6.dp))
+            val parts = listOfNotNull(
+                a.savingsCents.takeIf { it != 0L }?.let { "${Money.formatWhole(it)} to savings" },
+                a.investmentsCents.takeIf { it != 0L }?.let { "${Money.formatWhole(it)} to investments" },
+            )
+            Text(
+                "Put away ${Money.formatWhole(a.totalCents)}" + if (parts.size > 1) " · " + parts.joinToString(" · ") else
+                    " " + parts.single().substringAfter(' '),
+                color = Color.White.copy(alpha = 0.9f), style = MaterialTheme.typography.bodyMedium,
+            )
+        }
     }
 }
 
@@ -279,10 +291,9 @@ private fun CashFlowCard(s: OverviewState, nav: NavController, onShowMonth: (Yea
                 "${Money.formatWhole(Math.abs(diff))} ${if (diff >= 0) "better" else "worse"} than your average month",
                 style = MaterialTheme.typography.bodySmall, color = p.secondaryLabel,
             )
-            val inv = s.seriesInvested[picked.month] ?: 0L
-            if (inv > 0) Text(
-                if (picked.netCents > 0 && inv <= picked.netCents) "${Money.formatWhole(inv)} of it went into your investments"
-                else "${Money.formatWhole(inv)} went into your investments",
+            val away = s.seriesSetAside[picked.month]?.totalCents ?: 0L
+            if (away > 0) Text(
+                "${Money.formatWhole(away)} ${if (picked.netCents > 0 && away <= picked.netCents) "of it " else ""}was put into savings and investments",
                 style = MaterialTheme.typography.bodySmall, color = p.chart[2],
             )
         }
@@ -306,8 +317,14 @@ private fun CashFlowCard(s: OverviewState, nav: NavController, onShowMonth: (Yea
             val withData = months.filter { !notFinal(it.month) }
             StatRow("Average income", Money.formatWhole(withData.sumOf { it.incomeCents } / withData.size.coerceAtLeast(1)))
             StatRow("Average spending", Money.formatWhole(withData.sumOf { it.spendingCents } / withData.size.coerceAtLeast(1)))
-            val invested = withData.sumOf { s.seriesInvested[it.month] ?: 0L }
-            if (invested != 0L) StatRow("Average invested", Money.formatWhole(invested / withData.size.coerceAtLeast(1)), p.chart[2])
+            val n = withData.size.coerceAtLeast(1)
+            val toSavings = withData.sumOf { s.seriesSetAside[it.month]?.savingsCents ?: 0L }
+            val toInvest = withData.sumOf { s.seriesSetAside[it.month]?.investmentsCents ?: 0L }
+            if (toSavings != 0L || toInvest != 0L) StatRow("Average put away", Money.formatWhole((toSavings + toInvest) / n), p.chart[2])
+            if (toSavings != 0L && toInvest != 0L) {
+                StatRow("   to savings", Money.formatWhole(toSavings / n))
+                StatRow("   to investments", Money.formatWhole(toInvest / n))
+            }
             if (withData.size >= 2) {
                 val best = withData.maxBy { it.netCents }
                 val worst = withData.minBy { it.netCents }
@@ -317,8 +334,9 @@ private fun CashFlowCard(s: OverviewState, nav: NavController, onShowMonth: (Yea
         } else {
             StatRow("Income", Money.formatWhole(picked.incomeCents))
             StatRow("Spending", Money.formatWhole(picked.spendingCents))
-            (s.seriesInvested[picked.month] ?: 0L).takeIf { it != 0L }?.let { inv ->
-                StatRow(if (inv > 0) "Invested" else "Taken out of investments", Money.formatWhole(Math.abs(inv)), p.chart[2])
+            s.seriesSetAside[picked.month]?.let { a ->
+                if (a.savingsCents != 0L) StatRow(if (a.savingsCents > 0) "To savings" else "Taken from savings", Money.formatWhole(Math.abs(a.savingsCents)), p.chart[2])
+                if (a.investmentsCents != 0L) StatRow(if (a.investmentsCents > 0) "To investments" else "Taken from investments", Money.formatWhole(Math.abs(a.investmentsCents)), p.chart[2])
             }
             StatRow("Kept", picked.savingsRatePercent?.let { "$it% of income" } ?: "–")
             val cats = s.seriesCategories[picked.month].orEmpty()

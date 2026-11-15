@@ -24,6 +24,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.navigation.NavController
 import androidx.navigation.toRoute
 import ca.emarshall.finance.core.categorize.AmountRule
+import ca.emarshall.finance.core.categorize.DefaultCategories
 import ca.emarshall.finance.core.model.AccountType
 import ca.emarshall.finance.core.model.CategoryKind
 import ca.emarshall.finance.core.money.Money
@@ -143,7 +144,10 @@ class KnownPaymentEditViewModel @Inject constructor(
     transactions: TransactionRepository,
 ) : ViewModel() {
     val route = savedState.toRoute<KnownPaymentEditRoute>()
-    val spendingCategories = categories.categories.map { c -> c.filter { it.kindEnum == CategoryKind.EXPENSE } }
+    // Spending categories, plus the two "putting money away" ones (e.g. "$500 to savings every payday").
+    val spendingCategories = categories.categories.map { c ->
+        c.filter { it.kindEnum == CategoryKind.EXPENSE || it.key == DefaultCategories.SAVINGS_TRANSFER || it.key == DefaultCategories.INVESTMENTS_TRANSFER }
+    }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val existing = MutableStateFlow<AmountRuleEntity?>(null)
     val loaded = MutableStateFlow(route.id <= 0)

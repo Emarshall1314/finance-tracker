@@ -80,8 +80,9 @@ class UnlockedMonthTest {
 class InvestedAndOverallTest {
     private var id = 0L
     private val oct = LocalDate.of(2026, 10, 10)
-    private fun f(cents: Long, key: String, kind: CategoryKind, acct: AccountKind, link: Boolean = false, toInv: Boolean = false) =
-        TxFact(++id, 1, oct, cents, "CAD", key, key, kind, "M", link, acct, toInv)
+    private fun f(cents: Long, key: String, kind: CategoryKind, acct: AccountKind, link: Boolean = false, toInv: Boolean = false, toSavings: Boolean = false) =
+        TxFact(++id, 1, oct, cents, "CAD", key, key, kind, "M", link, acct,
+            if (toInv) ca.emarshall.finance.core.analytics.SetAside.INVESTMENTS else if (toSavings) ca.emarshall.finance.core.analytics.SetAside.SAVINGS else null)
 
     @Test fun investedCountsTheBankSideOnly() {
         val facts = listOf(
@@ -89,8 +90,12 @@ class InvestedAndOverallTest {
             f(150_000, "investments_transfer", CategoryKind.TRANSFER, AccountKind.INVESTMENT, link = true, toInv = true), // Questrade side
             f(20_000, "investments_transfer", CategoryKind.TRANSFER, AccountKind.BANK, toInv = true), // withdrawal back
             f(-5_000, "groceries", CategoryKind.EXPENSE, AccountKind.BANK),
+            f(-50_000, "savings_transfer", CategoryKind.TRANSFER, AccountKind.BANK, toSavings = true), // auto-transfer to savings
         )
-        assertEquals(130_000L, Analytics(facts).investedIn(YearMonth.of(2026, 10)))
+        val t = Analytics(facts).setAsideIn(YearMonth.of(2026, 10))
+        assertEquals(130_000L, t.investmentsCents)
+        assertEquals(50_000L, t.savingsCents)
+        assertEquals(180_000L, t.totalCents)
     }
 
     @Test fun overallLeavesOutTransfersAndInvestmentActivity() {

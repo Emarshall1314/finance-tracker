@@ -20,8 +20,8 @@ data class TxFact(
     val isTransfer: Boolean,
     /** What kind of account it's in; decides whether money in counts as income. */
     val accountKind: AccountKind = AccountKind.BANK,
-    /** Money moved between this (bank or card) account and an investment account, e.g. a Questrade deposit. */
-    val toInvestments: Boolean = false,
+    /** Money moved from this bank account to savings or investments (negative = put away, positive = taken back). */
+    val setAside: SetAside? = null,
 ) {
     val countsAsTransfer get() = isTransfer || kind == CategoryKind.TRANSFER
 }
@@ -32,6 +32,14 @@ data class TxFact(
  * there and is neither income nor spending.
  */
 enum class AccountKind { BANK, CARD, INVESTMENT }
+
+/** Where money put away went. */
+enum class SetAside { SAVINGS, INVESTMENTS }
+
+/** Net put away in a month: moves out of chequing minus moves back. */
+data class SetAsideTotals(val savingsCents: Long, val investmentsCents: Long) {
+    val totalCents get() = savingsCents + investmentsCents
+}
 
 /** Applies the account rules above, so every total treats card refunds and investment activity the same way. */
 fun TxFact.forCashFlow(): TxFact? = when {
@@ -104,10 +112,14 @@ class Analytics(rawFacts: List<TxFact>, private val homeCurrency: String = "CAD"
             }
 
     /**
-     * Net money moved from bank accounts into investment accounts in [m]: deposits minus withdrawals, seen
-     * from the bank side (so it works from statements alone, without a Questrade sync).
+     * Net money moved from chequing into savings and investment accounts in [m]: deposits minus
+     * withdrawals, seen from the chequing side (so it works from statements alone).
      */
-    fun investedIn(m: YearMonth): Long = -inMonth(m).filter { it.toInvestments }.sumOf { it.amountCents }
+    fun setAsideIn(m: YearMonth): SetAsideTotals {
+        val rows = inMonth(m)
+        fun net(kind: SetAside) = -rows.filter { it.setAside == kind }.sumOf { it.amountCents }
+        return SetAsideTotals(net(SetAside.SAVINGS), net(SetAside.INVESTMENTS))
+    }
 
     /** Income and spending over every fact given, with the same rules as the monthly totals. */
     fun overall(): MonthTotalsLite {
