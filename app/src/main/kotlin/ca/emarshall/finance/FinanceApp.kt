@@ -56,14 +56,14 @@ class FinanceApp : Application(), Configuration.Provider {
                 // Once: pair transfers again with the stricter rules (older versions paired any two equal amounts).
                 // That also re-sorts every transaction, which a new set of built-in rules needs too.
                 val rulesVersion = settings.get().seedRulesVersion()
-                if (done < 4 || rulesVersion < ca.emarshall.finance.core.categorize.SeedRules.VERSION) categories.get().recleanMerchants()
-                if (done < 4) {
+                if (done < 5 || rulesVersion < ca.emarshall.finance.core.categorize.SeedRules.VERSION) categories.get().recleanMerchants()
+                if (done < 5) {
                     transactions.get().repairTransfers()
                 } else if (rulesVersion < ca.emarshall.finance.core.categorize.SeedRules.VERSION) {
                     categories.get().recategorizeAll()
                     transactions.get().rematchTransfers()
                 }
-                if (done < 4) settings.get().setRepairVersion(4)
+                if (done < 5) settings.get().setRepairVersion(5)
                 if (rulesVersion != ca.emarshall.finance.core.categorize.SeedRules.VERSION) {
                     settings.get().setSeedRulesVersion(ca.emarshall.finance.core.categorize.SeedRules.VERSION)
                 }

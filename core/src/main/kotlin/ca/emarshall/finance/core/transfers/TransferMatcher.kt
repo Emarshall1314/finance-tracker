@@ -36,6 +36,9 @@ object TransferMatcher {
         "DEPOSIT", "CONTRIBUTION", "WITHDRAWAL", "EFT", "BILL PAY",
     )
 
+    /** How far apart an e-Transfer and the card payment it made can be dated (statements date them a day or two apart). */
+    private const val ETRANSFER_PAYMENT_DAYS = 2L
+
     fun match(candidates: List<TransferCandidate>, windowDays: Int = 5): List<TransferPair> {
         val open = candidates.filterNot { it.locked || it.amountCents == 0L }
         val outs = open.filter { it.amountCents < 0 }
@@ -45,9 +48,9 @@ object TransferMatcher {
         for (o in outs) {
             val ins = insByKey[o.currency to -o.amountCents] ?: continue
             for (i in ins) {
-                if (i.accountId == o.accountId || !plausible(o, i)) continue
+                if (i.accountId == o.accountId) continue
                 val days = Math.abs(ChronoUnit.DAYS.between(o.date, i.date))
-                if (days > windowDays) continue
+                if (days > windowDays || !plausible(o, i, days)) continue
                 var score = 100 - days.toInt() * 10
                 if (hasKeyword(o.description)) score += 15
                 if (hasKeyword(i.description)) score += 15
@@ -67,10 +70,19 @@ object TransferMatcher {
     private val NEVER = listOf("POINT OF SALE", "POS PURCHASE", "E-TRANSFER", "ETRANSFER", "E-TRF", "E-TFR", "ABM", "ATM", "PAYROLL", "REFUND")
     private val CARD_PAYMENT = listOf("PAYMENT", "THANK YOU", "SCOTIABANK TRANSIT", "CTFS", "TRANSFER", "TFR", "MASTERCARD", "VISA", "TRIANGLE")
 
-    private fun plausible(out: TransferCandidate, inn: TransferCandidate): Boolean {
+    private val ETRANSFER = listOf("E-TRANSFER", "ETRANSFER", "E-TRF", "E-TFR")
+    private val PAYMENT_ON_CARD = listOf("PAYMENT", "PYMT", "THANK YOU", "SCOTIABANK TRANSIT", "CTFS")
+
+    private fun plausible(out: TransferCandidate, inn: TransferCandidate, days: Long): Boolean {
         if (out.kind == AccountKind.CARD) return false // purchases leave a card; money doesn't move from it to a bank account
         val o = out.description.uppercase()
         val i = inn.description.uppercase()
+        // A card can be paid by e-Transfer: an e-Transfer out of the bank and a payment of the same amount
+        // arriving on a card within a day or so are one payment. The card side must say it's a payment,
+        // so a shop's refund of the same amount is never mistaken for one.
+        if (inn.kind == AccountKind.CARD && days <= ETRANSFER_PAYMENT_DAYS && ETRANSFER.any { o.contains(it) } &&
+            PAYMENT_ON_CARD.any { i.contains(it) } && NEVER.none { i.contains(it) }
+        ) return true
         if (NEVER.any { o.contains(it) || i.contains(it) }) return false
         if (inn.kind == AccountKind.CARD && CARD_PAYMENT.none { o.contains(it) || i.contains(it) }) return false
         return true

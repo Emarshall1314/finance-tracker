@@ -73,6 +73,21 @@ class TransfersAndRecurringTest {
         assertEquals(1, TransferMatcher.match(listOf(tc(1, 10, -150000, "Misc. payment Questrade Inc"), tc(2, 30, 150000, "Deposits", ca.emarshall.finance.core.analytics.AccountKind.INVESTMENT))).size)
     }
 
+    @Test fun eTransferThatPaysACardIsACardPayment() {
+        val card = ca.emarshall.finance.core.analytics.AccountKind.CARD
+        fun tc(id: Long, acct: Long, day: Int, cents: Long, desc: String, kind: ca.emarshall.finance.core.analytics.AccountKind = ca.emarshall.finance.core.analytics.AccountKind.BANK) =
+            TransferCandidate(id, acct, d(3, day), cents, "CAD", desc, kind = kind)
+        val etransfer = "Withdrawal 12345678 Free Interac E-Transfer"
+        // Same day, same amount, and the card calls it a payment.
+        assertEquals(1, TransferMatcher.match(listOf(tc(1, 10, 5, -40000, etransfer), tc(2, 20, 5, 40000, "CTFS.COM/PAYMENTS OAKVILLE ON", card))).size)
+        assertEquals(1, TransferMatcher.match(listOf(tc(1, 10, 5, -40000, etransfer), tc(2, 20, 6, 40000, "PAYMENT - THANK YOU", card))).size)
+        // Too far apart, or the card side is a shop's refund: still an ordinary e-Transfer.
+        assertTrue(TransferMatcher.match(listOf(tc(1, 10, 5, -40000, etransfer), tc(2, 20, 9, 40000, "PAYMENT - THANK YOU", card))).isEmpty())
+        assertTrue(TransferMatcher.match(listOf(tc(1, 10, 5, -40000, etransfer), tc(2, 20, 5, 40000, "AMAZON.CA", card))).isEmpty())
+        // An e-Transfer never pairs with a deposit in another bank account.
+        assertTrue(TransferMatcher.match(listOf(tc(1, 10, 5, -40000, etransfer), tc(2, 30, 5, 40000, "PAYMENT RECEIVED"))).isEmpty())
+    }
+
     @Test fun billsSurviveLateStatements() {
         val through = d(4, 15) // the card's latest statement closed Apr 15
         val txs = listOf(d(1, 20), d(2, 20), d(3, 20)).mapIndexed { i, day -> RecurringInput(i.toLong(), day, -1699, "Netflix", dataThrough = through) }
