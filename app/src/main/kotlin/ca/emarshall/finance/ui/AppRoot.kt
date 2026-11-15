@@ -88,6 +88,7 @@ import kotlin.reflect.KClass
 @Serializable data class GoalEditRoute(val id: Long = -1)
 @Serializable data class ClaudeChatRoute(val prompt: String = "")
 @Serializable object ClaudeSetupRoute
+@Serializable data class CategoryRoute(val categoryId: Long, val month: String)
 
 sealed interface PendingNav {
     data class ImportFiles(val uris: List<String>) : PendingNav
@@ -187,6 +188,7 @@ fun AppRoot(
             composable<GoalEditRoute> { GoalEditScreen(nav) }
             composable<ClaudeChatRoute> { ClaudeChatScreen(nav) }
             composable<ClaudeSetupRoute> { ClaudeSetupScreen(nav) }
+            composable<CategoryRoute> { ca.emarshall.finance.ui.categories.CategoryDetailScreen(nav) }
         }
     }
 }

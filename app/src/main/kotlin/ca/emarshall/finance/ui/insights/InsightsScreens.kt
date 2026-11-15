@@ -227,10 +227,14 @@ private fun Bullets(title: String, items: List<String>) {
 private fun InsightRow(i: Insight, claudeOn: Boolean, nav: NavController, onDismiss: () -> Unit) {
     Column(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Icon(
+            ca.emarshall.finance.ui.design.IconTile(
                 when (i.severity) { Severity.ALERT -> Icons.Default.ErrorOutline; Severity.WARNING -> Icons.Default.Warning; Severity.INFO -> Icons.Default.Info },
-                contentDescription = i.severity.name.lowercase(),
-                tint = when (i.severity) { Severity.ALERT -> MaterialTheme.colorScheme.error; Severity.WARNING -> Color(0xFFE6A100); Severity.INFO -> MaterialTheme.colorScheme.primary },
+                when (i.severity) {
+                    Severity.ALERT -> ca.emarshall.finance.ui.theme.Fin.palette.negative
+                    Severity.WARNING -> Color(0xFFFF9F0A)
+                    Severity.INFO -> ca.emarshall.finance.ui.theme.Fin.palette.accent
+                },
+                size = 28.dp,
             )
             Text(i.title, style = MaterialTheme.typography.titleSmall)
         }

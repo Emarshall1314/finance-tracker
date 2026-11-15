@@ -120,7 +120,7 @@ fun OverviewScreen(nav: NavController, vm: OverviewViewModel = hiltViewModel()) 
                         val color = Fin.palette.chart[i % Fin.palette.chart.size]
                         Column(
                             Modifier.fillMaxWidth().clickable(enabled = id != null) {
-                                nav.navigate(TransactionsRoute(categoryId = id ?: -1, month = s.month.toString()))
+                                nav.navigate(ca.emarshall.finance.ui.CategoryRoute(id ?: -1, s.month.toString()))
                             }.padding(vertical = 4.dp),
                             verticalArrangement = Arrangement.spacedBy(6.dp),
                         ) {

@@ -2,7 +2,11 @@ package ca.emarshall.finance.ui.investments
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -125,47 +129,77 @@ private fun InvestmentsContent(v: InvestmentsView, busy: Boolean, onSync: () -> 
         Text(Money.formatWhole(v.totalEquityCadCents), color = white, style = MaterialTheme.typography.headlineLarge)
         Text("Dividends this year ${Money.formatWhole(v.dividendsYtdCents)} · CAD, all accounts", color = white.copy(alpha = 0.85f), style = MaterialTheme.typography.bodyMedium)
     }
+    val p = ca.emarshall.finance.ui.theme.Fin.palette
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             if (v.lastSyncMillis > 0) "Synced ${java.time.Instant.ofEpochMilli(v.lastSyncMillis).atZone(java.time.ZoneId.systemDefault()).format(SYNC_FORMAT)}" else "Not synced yet",
-            Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
+            Modifier.weight(1f).padding(start = 4.dp), style = MaterialTheme.typography.bodySmall, color = p.secondaryLabel,
         )
-        if (busy) CircularProgressIndicator() else TextButton(onClick = onSync) { Text("Sync now") }
+        if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else TextButton(onClick = onSync) { Text("Sync now") }
     }
-    SectionCard("Accounts") {
-        v.accounts.forEach { a ->
-            Text(a.account.nickname, style = MaterialTheme.typography.titleSmall)
-            LabeledRow("Equity") { MoneyText(a.equityCadCents, colored = false) }
-            LabeledRow("Cash") { MoneyText(a.cashCadCents, colored = false) }
-            if (a.account.typeEnum.isInvestment) LabeledRow("Deposits this year") { MoneyText(a.depositsThisYearCents, colored = false) }
-        }
-        Text("Contribution room isn't calculated — check it with the CRA.", style = MaterialTheme.typography.bodySmall)
-    }
+
     if (v.holdings.isNotEmpty()) {
-        SectionCard("Holdings and allocation") {
-            val total = v.holdingsTotalCadCents.coerceAtLeast(1)
-            v.holdings.forEach { h ->
-                val pct = h.marketValueCadCents * 1000 / total // tenths of a percent, integer maths
-                LabeledRow("${h.symbol} · ${h.quantity.toPlainString()}") { Text("${pct / 10}.${pct % 10}%") }
-                ShareBar(pct / 1000f, MaterialTheme.colorScheme.tertiary)
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    MoneyText(h.marketValueCents, h.currency, colored = false, style = MaterialTheme.typography.bodySmall)
-                    Text("P&L", style = MaterialTheme.typography.bodySmall)
-                    MoneyText(h.openPnlCents, h.currency, style = MaterialTheme.typography.bodySmall)
+        ca.emarshall.finance.ui.design.SectionHeader("Allocation")
+        val total = v.holdingsTotalCadCents.coerceAtLeast(1)
+        ca.emarshall.finance.ui.design.FinCard {
+            Row(Modifier.fillMaxWidth().height(14.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(7.dp)), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                v.holdings.filter { it.marketValueCadCents > 0 }.forEachIndexed { i, h ->
+                    androidx.compose.foundation.layout.Box(
+                        Modifier.weight(h.marketValueCadCents.toFloat() / total).height(14.dp).background(p.chart[i % p.chart.size]),
+                    )
                 }
             }
-            if (v.holdings.any { it.currency != "CAD" }) Text("USD holdings are converted with the rate implied by Questrade's own balances.", style = MaterialTheme.typography.bodySmall)
+        }
+        ca.emarshall.finance.ui.design.Group {
+            v.holdings.forEachIndexed { i, h ->
+                val pct = h.marketValueCadCents * 1000 / total // tenths of a percent, integer maths
+                ca.emarshall.finance.ui.design.GroupRow(
+                    h.symbol,
+                    subtitle = "${h.quantity.toPlainString()} units · P&L ${Money.format(h.openPnlCents, h.currency, true)}",
+                    value = "${pct / 10}.${pct % 10}%",
+                    divider = i < v.holdings.size - 1,
+                    trailing = { androidx.compose.foundation.layout.Box(Modifier.size(10.dp).clip(androidx.compose.foundation.shape.CircleShape).background(p.chart[i % p.chart.size])) },
+                )
+            }
+        }
+        if (v.holdings.any { it.currency != "CAD" }) {
+            Text("USD holdings are converted with the rate implied by Questrade's own balances.", Modifier.padding(horizontal = 4.dp),
+                style = MaterialTheme.typography.bodySmall, color = p.secondaryLabel)
         }
     }
-    SectionCard("Dividends (CAD)") {
-        LabeledRow("Last 12 months") { MoneyText(v.dividends12mCents) }
-        LabeledRow("This year") { MoneyText(v.dividendsYtdCents) }
+
+    ca.emarshall.finance.ui.design.SectionHeader("Accounts")
+    ca.emarshall.finance.ui.design.Group {
+        v.accounts.forEachIndexed { i, a ->
+            ca.emarshall.finance.ui.design.GroupRow(
+                a.account.nickname,
+                subtitle = "Cash ${Money.formatWhole(a.cashCadCents)}" +
+                    if (a.depositsThisYearCents != 0L) " · deposited ${Money.formatWhole(a.depositsThisYearCents)} this year" else "",
+                value = Money.formatWhole(a.equityCadCents), valueColor = p.label, divider = i < v.accounts.size - 1,
+            )
+        }
     }
-    SectionCard("Recent activity") {
-        if (v.recent.isEmpty()) Text("No activity in the last 12 months.")
-        v.recent.take(15).forEach { a ->
-            LabeledRow("${a.transactionDate.format(SHORT_DAY)} · ${a.type}${if (a.symbol.isNotBlank()) " ${a.symbol}" else ""}") {
-                MoneyText(a.netAmountCents, a.currency, style = MaterialTheme.typography.bodyMedium)
+    Text("Contribution room isn't calculated; check it in CRA My Account.", Modifier.padding(horizontal = 4.dp),
+        style = MaterialTheme.typography.bodySmall, color = p.secondaryLabel)
+
+    ca.emarshall.finance.ui.design.SectionHeader("Dividends")
+    ca.emarshall.finance.ui.design.Group {
+        ca.emarshall.finance.ui.design.GroupRow("Last 12 months", value = Money.format(v.dividends12mCents))
+        ca.emarshall.finance.ui.design.GroupRow("This year", value = Money.format(v.dividendsYtdCents), divider = false)
+    }
+
+    if (v.recent.isNotEmpty()) {
+        ca.emarshall.finance.ui.design.SectionHeader("Recent activity")
+        ca.emarshall.finance.ui.design.Group {
+            val shown = v.recent.take(12)
+            shown.forEachIndexed { i, a ->
+                ca.emarshall.finance.ui.design.GroupRow(
+                    a.type + if (a.symbol.isNotBlank()) " · ${a.symbol}" else "",
+                    subtitle = a.transactionDate.format(SHORT_DAY),
+                    value = (if (a.netAmountCents > 0) "+" else "") + Money.format(a.netAmountCents, a.currency, true),
+                    valueColor = if (a.netAmountCents > 0) p.positive else p.label,
+                    divider = i < shown.size - 1,
+                )
             }
         }
     }
