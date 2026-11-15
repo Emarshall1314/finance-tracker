@@ -285,3 +285,7 @@ Requested by the owner after the first build:
   really have moved that way (never from a card to a bank account, never a shop purchase or e-Transfer).
 - **Built-in rules live in code** (`SeedRules`) so updates bring new ones; **Sort out Other** lists the
   places they couldn't recognise for one-tap sorting.
+- **Backup & restore.** A password-encrypted file (AES-256-GCM, PBKDF2 key) with every table and,
+  optionally, the statement PDFs. Made only when the owner asks and saved where they choose; never
+  automatic, never uploaded by the app. Tokens and keys are excluded. Restore replaces everything.
+

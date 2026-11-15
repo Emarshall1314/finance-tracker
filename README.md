@@ -27,6 +27,12 @@ for what each bank's files look like.
 - **Known payments** (Settings → Known payments, or "I pay this amount regularly" on a transaction):
   "Rent, $1,800, around the 1st" makes every payment of that amount Rent, even an e-Transfer whose
   description says nothing. Transfers and categories you picked by hand are never changed.
+- **Backup & restore** (Settings): one password-encrypted file holding everything in the app, and
+  optionally the original statement PDFs, to keep in Drive or on a computer. Restoring it on a new phone
+  (or after a reinstall) brings everything back. The Questrade token and AI key are never in it.
+- **Graphics you can touch**: a money-flow diagram (income on the left pouring into where it went), a
+  calendar shaded by daily spending, monthly savings bars, a year-to-date donut, net worth and portfolio
+  lines. Tap anything for its details. Insights opens with the month in a few big numbers.
 - **Transfers** between your own accounts (card payments, deposits to Questrade) are paired and never
   counted as income or spending.
 - **Bills & subscriptions**: recurring monthly charges with their cost and next date.

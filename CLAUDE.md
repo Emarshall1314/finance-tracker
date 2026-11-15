@@ -37,6 +37,11 @@ A private, single-user Android app that tracks one person's money (BC, Canada; C
 - `app/` — Android: Compose UI, Room + SQLCipher, DataStore + Tink secrets, Questrade client, WorkManager
   jobs, notifications, file import (SAF + share/open-with, quick import), encrypted statement library,
   PdfBox text extraction, opt-in AI coach (`ai/`: Anthropic SDK or any OpenAI-compatible API), Hilt DI.
+- `app/.../backup/` — the encrypted backup file: `BackupCrypto` (password to AES-GCM), `BackupFormat`
+  (JSON, rows by column name so old backups load after schema changes), `BackupRepository` (dumps and
+  restores every table generically; add nothing here when adding a table).
+- Charts are hand-drawn in `app/.../ui/design/Charts.kt` (no chart library). Every chart takes a
+  `selected` index and `onSelect`; the screen owns the selection and shows the details.
 - `core/` also holds missing-statement detection (`statements/`), unusual-activity insights (`insights/`) and
   goal progress (`goals/`) — all offline and deterministic.
 
