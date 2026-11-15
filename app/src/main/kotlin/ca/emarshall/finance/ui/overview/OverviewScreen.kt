@@ -1,6 +1,8 @@
 package ca.emarshall.finance.ui.overview
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -139,8 +141,8 @@ fun OverviewScreen(nav: NavController, vm: OverviewViewModel = hiltViewModel()) 
         }
 
         if (!s.loading && s.netWorthCents != null) {
-            item { SectionHeader("Net worth", "Accounts") { nav.navigate(AccountsRoute) } }
-            item { NetWorthCard(s) }
+            item { SectionHeader("Liquid net worth", "Accounts") { nav.navigate(AccountsRoute) } }
+            item { s.breakdown?.let { LiquidCard(it, s) } ?: NetWorthCard(s) }
         }
 
         if (!s.loading && s.upcomingBills.isNotEmpty()) {
@@ -287,6 +289,88 @@ private fun NetWorthCard(s: OverviewState) {
                 Text(b.nickname, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                 MoneyText(b.balanceCents, b.currency, colored = false, style = MaterialTheme.typography.bodyMedium)
             }
+        }
+    }
+}
+
+/** Money you could use soon, and where it sits. RRSP/FHSA are shown but not counted as liquid. */
+@Composable
+private fun LiquidCard(b: ca.emarshall.finance.core.analytics.NetWorthBreakdown, s: OverviewState) {
+    val p = Fin.palette
+    val bucketColor = mapOf(
+        ca.emarshall.finance.core.analytics.LiquidityBucket.CASH to p.chart[0],
+        ca.emarshall.finance.core.analytics.LiquidityBucket.INVESTMENTS to p.chart[2],
+        ca.emarshall.finance.core.analytics.LiquidityBucket.DEBT to p.negative,
+        ca.emarshall.finance.core.analytics.LiquidityBucket.LONG_TERM to p.tertiaryLabel,
+    )
+    FinCard {
+        Text(Money.formatWhole(b.liquidCents), style = MaterialTheme.typography.headlineMedium)
+        Text("Cash and investments you can reach, minus what you owe", style = MaterialTheme.typography.bodySmall, color = p.secondaryLabel)
+
+        // Stacked bar of liquid assets, one segment per account; debt as a red tail proportional to its size.
+        val liquidSegs = (b.bucket(ca.emarshall.finance.core.analytics.LiquidityBucket.CASH) + b.bucket(ca.emarshall.finance.core.analytics.LiquidityBucket.INVESTMENTS))
+            .filter { it.position.balanceCents > 0 }
+        val assets = liquidSegs.sumOf { it.position.balanceCents }.coerceAtLeast(1)
+        val debt = -b.debtCents
+        Row(
+            Modifier.fillMaxWidth().height(14.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(7.dp)),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            liquidSegs.forEachIndexed { i, seg ->
+                val base = bucketColor.getValue(seg.bucket)
+                androidx.compose.foundation.layout.Box(
+                    Modifier.weight(seg.position.balanceCents.toFloat() / (assets + debt.coerceAtLeast(0)).toFloat()).height(14.dp)
+                        .background(base.copy(alpha = 1f - 0.18f * (i % 3))),
+                )
+            }
+            if (debt > 0) androidx.compose.foundation.layout.Box(
+                Modifier.weight(debt.toFloat() / (assets + debt).toFloat()).height(14.dp).background(p.negative.copy(alpha = 0.75f)),
+            )
+        }
+
+        listOf(
+            ca.emarshall.finance.core.analytics.LiquidityBucket.CASH to b.cashCents,
+            ca.emarshall.finance.core.analytics.LiquidityBucket.INVESTMENTS to b.investmentsCents,
+            ca.emarshall.finance.core.analytics.LiquidityBucket.DEBT to b.debtCents,
+        ).filter { (bucket, _) -> b.bucket(bucket).isNotEmpty() }.forEach { (bucket, total) ->
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    LegendDot(bucketColor.getValue(bucket), bucket.label)
+                    Spacer(Modifier.weight(1f))
+                    Text(Money.formatWhole(total), style = MaterialTheme.typography.titleSmall)
+                }
+                b.bucket(bucket).forEach { seg ->
+                    Row(Modifier.padding(start = 14.dp)) {
+                        Text("${seg.position.nickname} · ${seg.position.institution.displayName}", Modifier.weight(1f),
+                            style = MaterialTheme.typography.bodyMedium, color = p.secondaryLabel, maxLines = 1)
+                        Text(Money.formatWhole(seg.position.balanceCents), style = MaterialTheme.typography.bodyMedium, color = p.secondaryLabel)
+                    }
+                }
+            }
+        }
+        if (b.bucket(ca.emarshall.finance.core.analytics.LiquidityBucket.LONG_TERM).isNotEmpty()) {
+            androidx.compose.material3.HorizontalDivider(color = p.separator, thickness = 0.5.dp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                LegendDot(p.tertiaryLabel, "Long-term (RRSP, FHSA) · not liquid")
+                Spacer(Modifier.weight(1f))
+                Text(Money.formatWhole(b.longTermCents), style = MaterialTheme.typography.titleSmall, color = p.secondaryLabel)
+            }
+        }
+        Row {
+            Text("Total net worth", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = p.secondaryLabel)
+            Text(Money.formatWhole(b.totalCents), style = MaterialTheme.typography.bodyMedium)
+        }
+        val trend = s.netWorthTrend.filter { it.second != 0L }
+        if (trend.size >= 2) {
+            val change = trend.last().second - trend.first().second
+            Text(
+                "Total ${if (change >= 0) "▲" else "▼"} ${Money.formatWhole(Math.abs(change))} since ${trend.first().first.format(SHORT_MONTH)}",
+                color = if (change >= 0) p.positive else p.negative, style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        val oldest = b.segments.minOfOrNull { it.position.asOf }
+        if (oldest != null && oldest.isBefore(java.time.LocalDate.now().minusDays(35))) {
+            Text("Some balances are from ${oldest.format(SHORT_DAY)} — import newer statements to update.", style = MaterialTheme.typography.bodySmall, color = p.warning)
         }
     }
 }

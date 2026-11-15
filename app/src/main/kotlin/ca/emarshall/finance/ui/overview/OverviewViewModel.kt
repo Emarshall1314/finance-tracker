@@ -22,6 +22,7 @@ import ca.emarshall.finance.data.latestBalances
 import ca.emarshall.finance.data.ruleKey
 import ca.emarshall.finance.data.toFact
 import ca.emarshall.finance.data.typeEnum
+import ca.emarshall.finance.data.institutionEnum
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -59,6 +60,8 @@ data class OverviewState(
     val netWorthCents: Long? = null,
     val netWorthTrend: List<Pair<YearMonth, Long>> = emptyList(),
     val balances: List<AccountBalance> = emptyList(),
+    /** Liquid net worth, segmented by where the money sits. */
+    val breakdown: ca.emarshall.finance.core.analytics.NetWorthBreakdown? = null,
     val freshness: List<FreshnessRow> = emptyList(),
     val hasTransactions: Boolean = false,
 )
@@ -122,6 +125,12 @@ class OverviewViewModel @Inject constructor(
             netWorthCents = if (b.balances.isEmpty()) null else NetWorth.total(latestBalances(b.balances, byId)),
             netWorthTrend = NetWorth.trend(b.balances.map { BalancePoint(it.accountId, it.date, it.balanceCents, it.currency) }, YearMonth.from(today), 12),
             balances = latestBalances(b.balances, byId),
+            breakdown = if (b.balances.isEmpty()) null else ca.emarshall.finance.core.analytics.LiquidNetWorth.breakdown(
+                latestBalances(b.balances, byId).filter { it.currency == "CAD" }.mapNotNull { bal ->
+                    val a = byId[bal.accountId] ?: return@mapNotNull null
+                    ca.emarshall.finance.core.analytics.AccountPosition(a.id, a.nickname, a.institutionEnum, a.typeEnum, bal.balanceCents, bal.asOf)
+                },
+            ),
             freshness = b.accounts.filter { !it.typeEnum.isInvestment || it.questradeNumber == null }.map { acc ->
                 val through = listOfNotNull(latestTx[acc.id], latestBalance[acc.id]).maxOrNull()
                 val f = DataFreshness.of(acc.id, through, today)
