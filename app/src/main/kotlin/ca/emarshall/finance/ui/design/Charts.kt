@@ -320,10 +320,12 @@ fun FlowChart(
     Canvas(
         modifier.fillMaxWidth().height(height)
             .semantics { contentDescription = "Where the money went. Tap a destination for details." }
-            .pointerInput(dst.size) {
+            .pointerInput(dst, total) {
                 detectTapGestures { o ->
-                    // Destinations are laid out top to bottom in equal label rows; pick the row under the finger.
-                    val i = (o.y / (size.height.toFloat() / dst.size)).toInt().coerceIn(0, dst.size - 1)
+                    // The destination whose label is nearest the finger.
+                    val line = 18.dp.toPx()
+                    val tops = spreadLabels(flowLayout(dst, total, size.height.toFloat(), 3.dp.toPx()).map { (a, b) -> (a + b) / 2 }, line, size.height.toFloat())
+                    val i = tops.indices.minByOrNull { kotlin.math.abs(tops[it] + line / 2 - o.y) } ?: return@detectTapGestures
                     select(if (i == current) null else i)
                 }
             },
@@ -331,16 +333,8 @@ fun FlowChart(
         val bar = 10.dp.toPx()
         val gap = 3.dp.toPx()
         val h = size.height
-        fun layout(nodes: List<FlowNode>): List<Pair<Float, Float>> {
-            val usable = h - gap * (nodes.size - 1)
-            var y = 0f
-            return nodes.map { n ->
-                val nh = usable * n.cents / total
-                (y to y + nh).also { y += nh + gap }
-            }
-        }
-        val left = layout(src)
-        val right = layout(dst)
+        val left = flowLayout(src, total, h, gap)
+        val right = flowLayout(dst, total, h, gap)
 
         // Split every destination across the sources in order, so ribbons never cross.
         var si = 0
@@ -392,16 +386,48 @@ fun FlowChart(
             val cy = (left[i].first + left[i].second) / 2
             drawText(t, topLeft = Offset(bar + 8.dp.toPx(), (cy - t.size.height / 2).coerceIn(0f, (h - t.size.height).coerceAtLeast(0f))))
         }
-        val row = h / dst.size
+        // Each label sits beside its own bar; where bars are too thin for that, labels are nudged apart but keep their order.
+        val line = 18.dp.toPx()
+        val tops = spreadLabels(right.map { (a, b) -> (a + b) / 2 }, line, h)
         dst.forEachIndexed { i, n ->
             val on = selected == null || selected == i
             val t = measurer.measure(
                 n.label + "  " + format(n.cents),
                 if (on) small.copy(fontWeight = if (selected == i) FontWeight.SemiBold else FontWeight.Normal) else faint.copy(color = p.tertiaryLabel),
             )
-            drawText(t, topLeft = Offset(size.width - bar - 8.dp.toPx() - t.size.width, row * i + (row - t.size.height) / 2))
+            val x = size.width - bar - 8.dp.toPx() - t.size.width
+            val y = tops[i] + (line - t.size.height) / 2
+            drawCircle(n.color.copy(alpha = if (on) 1f else DIMMED), 3.dp.toPx(), Offset(x - 8.dp.toPx(), tops[i] + line / 2))
+            drawText(t, topLeft = Offset(x, y))
         }
     }
+}
+
+/** Top and bottom of each node's bar: heights in proportion to the amounts, with [gap] between bars. */
+private fun flowLayout(nodes: List<FlowNode>, total: Long, height: Float, gap: Float): List<Pair<Float, Float>> {
+    val usable = height - gap * (nodes.size - 1)
+    var y = 0f
+    return nodes.map { n ->
+        val nh = usable * n.cents / total
+        (y to y + nh).also { y += nh + gap }
+    }
+}
+
+/**
+ * Tops for one-line labels centred on [centers] (ascending), moved just enough that none overlap and all
+ * stay inside [height]: pushed down past the one above, then pulled back up from the bottom edge.
+ */
+internal fun spreadLabels(centers: List<Float>, line: Float, height: Float): List<Float> {
+    val tops = FloatArray(centers.size)
+    for (i in centers.indices) {
+        val wanted = centers[i] - line / 2
+        tops[i] = maxOf(wanted, if (i == 0) 0f else tops[i - 1] + line)
+    }
+    for (i in centers.indices.reversed()) {
+        val limit = if (i == centers.lastIndex) height - line else tops[i + 1] - line
+        if (tops[i] > limit) tops[i] = limit
+    }
+    return tops.toList()
 }
 
 /** One day in a [MonthHeatmap]. */
