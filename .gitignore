@@ -25,6 +25,8 @@ Thumbs.db
 keystore.properties
 *.jks
 *.keystore
+# The shared debug-only key (see app/build.gradle.kts) is committed on purpose.
+!app/debug.keystore
 *.p12
 *.pem
 .env

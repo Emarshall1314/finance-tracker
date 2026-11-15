@@ -23,12 +23,21 @@ android {
         applicationId = "ca.emarshall.finance"
         minSdk = 26
         targetSdk = 37
-        versionCode = 1
+        // CI builds count up with the run number, so each new APK installs as an update.
+        versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
+        // A fixed debug key (committed on purpose; debug-only, not a secret) so every CI build is signed the
+        // same way and installs over the previous one. Release builds use keystore.properties instead.
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
         if (keystoreProps.containsKey("storeFile")) {
             create("release") {
                 storeFile = rootProject.file(keystoreProps.getProperty("storeFile"))

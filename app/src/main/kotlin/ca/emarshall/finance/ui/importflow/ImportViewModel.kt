@@ -36,7 +36,11 @@ sealed interface ImportStep {
     data class Failed(val message: String) : ImportStep
 
     /** Several files opened or shared at once, each imported straight away where possible. */
-    data class Batch(val files: List<FileOutcome>, val working: Boolean) : ImportStep
+    data class Batch(val files: List<FileOutcome>, val working: Boolean, val transfersMatched: Int? = null) : ImportStep {
+        val done get() = files.count { it.outcome != null || it.error != null }
+        val imported get() = files.mapNotNull { it.outcome as? QuickImportOutcome.Imported }
+        val needsReview get() = files.mapIndexedNotNull { i, f -> (f.outcome as? QuickImportOutcome.NeedsReview)?.let { i to it } }
+    }
 }
 
 data class FileOutcome(val name: String, val outcome: QuickImportOutcome?, val error: String? = null)
@@ -72,16 +76,36 @@ class ImportViewModel @Inject constructor(
             }
             return@run
         }
-        val results = uris.map { FileOutcome(it.lastPathSegment ?: "file", null) }.toMutableList()
+        val results = uris.map { FileOutcome(imports.displayName(it), null) }.toMutableList()
         step.value = ImportStep.Batch(results.toList(), working = true)
         uris.forEachIndexed { i, uri ->
             results[i] = try {
-                FileOutcome(results[i].name, imports.quickImport(uri))
+                FileOutcome(results[i].name, imports.quickImport(uri, deferPostProcessing = true))
             } catch (e: Exception) {
                 FileOutcome(results[i].name, null, e.message ?: "Couldn't read this file")
             }
-            step.value = ImportStep.Batch(results.toList(), working = i < uris.size - 1)
+            step.value = ImportStep.Batch(results.toList(), working = true).also { batch = it }
         }
+        val matched = imports.finishBatch()
+        step.value = ImportStep.Batch(results.toList(), working = false, transfersMatched = matched).also { batch = it }
+    }
+
+    /** The batch being worked through, so reviewing one file can return to the list afterwards. */
+    private var batch: ImportStep.Batch? = null
+    private var reviewingIndex: Int? = null
+
+    fun importFolder(tree: Uri) = run {
+        step.value = ImportStep.Working
+        val files = imports.filesInFolder(tree)
+        if (files.isEmpty()) step.value = ImportStep.Failed("No PDF, CSV or OFX files in that folder.") else quickImport(files)
+    }
+
+    fun backToBatch() { batch?.let { step.value = it } }
+    val inBatch get() = batch != null
+
+    fun reviewAt(index: Int, o: QuickImportOutcome.NeedsReview) {
+        reviewingIndex = index
+        step.value = ImportStep.ChooseAccount(o.detected, o.reason)
     }
 
     fun review(o: QuickImportOutcome.NeedsReview) { step.value = ImportStep.ChooseAccount(o.detected, o.reason) }
@@ -141,7 +165,17 @@ class ImportViewModel @Inject constructor(
 
     fun commit(p: ImportPreview) = run {
         step.value = ImportStep.Working
-        step.value = ImportStep.Done(imports.commit(p), p.account.nickname)
+        val result = imports.commit(p)
+        val b = batch
+        val idx = reviewingIndex
+        if (b != null && idx != null) {
+            val files = b.files.toMutableList()
+            files[idx] = files[idx].copy(outcome = QuickImportOutcome.Imported(result, p.account.nickname, p))
+            reviewingIndex = null
+            step.value = b.copy(files = files).also { batch = it }
+        } else {
+            step.value = ImportStep.Done(result, p.account.nickname)
+        }
     }
 
     fun undo(d: ImportStep.Done) = run {

@@ -95,10 +95,14 @@ class ImportRepository @Inject constructor(
 ) {
     val batches = importDao.observeBatches()
 
-    suspend fun load(uri: Uri): LoadedFile = withContext(Dispatchers.IO) {
-        val name = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+    fun displayName(uri: Uri): String = runCatching {
+        context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
             if (c.moveToFirst()) c.getString(0) else null
-        } ?: uri.lastPathSegment ?: "statement"
+        }
+    }.getOrNull() ?: uri.lastPathSegment?.substringAfterLast('/') ?: "statement"
+
+    suspend fun load(uri: Uri): LoadedFile = withContext(Dispatchers.IO) {
+        val name = displayName(uri)
         val bytes = context.contentResolver.openInputStream(uri)?.use { input ->
             val out = java.io.ByteArrayOutputStream()
             val buf = ByteArray(64 * 1024)
@@ -170,7 +174,11 @@ class ImportRepository @Inject constructor(
         ImportPreview(detected, account, statement, plan, profile)
     }
 
-    suspend fun commit(p: ImportPreview): ImportResult {
+    /**
+     * Saves an import. [deferPostProcessing] is for batches: transfer matching, reminders and insight
+     * notifications then run once in [finishBatch] instead of after every file.
+     */
+    suspend fun commit(p: ImportPreview, deferPostProcessing: Boolean = false): ImportResult {
         val snap = categories.snapshot()
         val source = when (p.detected.file.format) {
             FileFormat.OFX -> TxSource.OFX
@@ -213,9 +221,11 @@ class ImportRepository @Inject constructor(
             files.save(result.first, p.detected.file.bytes)
             importDao.batch(result.first)?.let { importDao.updateBatch(it.copy(hasFile = true)) }
         }
-        val matched = transactions.rematchTransfers()
-        reminders.rescheduleAll()
-        runCatching { insights.get().notifyNew() }
+        val matched = if (deferPostProcessing) 0 else transactions.rematchTransfers()
+        if (!deferPostProcessing) {
+            reminders.rescheduleAll()
+            runCatching { insights.get().notifyNew() }
+        }
         return ImportResult(result.first, p.account.id, result.second, p.statement.transactions.size - result.second, matched)
     }
 
@@ -255,7 +265,36 @@ class ImportRepository @Inject constructor(
      * - a PDF/OFX statement, or a CSV with a saved mapping for the account,
      * - the statement reconciles (no warnings) and has new rows.
      */
-    suspend fun quickImport(uri: Uri): QuickImportOutcome {
+    /** After a batch of [quickImport]s with deferral: match transfers, reschedule reminders, notify once. */
+    suspend fun finishBatch(): Int {
+        val matched = transactions.rematchTransfers()
+        reminders.rescheduleAll()
+        runCatching { insights.get().notifyNew() }
+        return matched
+    }
+
+    /** Lists the files directly inside a folder the user picked (Storage Access Framework tree URI). */
+    suspend fun filesInFolder(tree: Uri): List<Uri> = withContext(Dispatchers.IO) {
+        val docId = android.provider.DocumentsContract.getTreeDocumentId(tree)
+        val children = android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(tree, docId)
+        val out = ArrayList<Pair<String, Uri>>()
+        context.contentResolver.query(
+            children,
+            arrayOf(android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID, android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                android.provider.DocumentsContract.Document.COLUMN_MIME_TYPE),
+            null, null, null,
+        )?.use { c ->
+            while (c.moveToNext()) {
+                val name = c.getString(1) ?: continue
+                if (c.getString(2) == android.provider.DocumentsContract.Document.MIME_TYPE_DIR) continue
+                if (name.substringAfterLast('.', "").lowercase() !in setOf("pdf", "csv", "ofx", "qfx", "qbo")) continue
+                out.add(name to android.provider.DocumentsContract.buildDocumentUriUsingTree(tree, c.getString(0)))
+            }
+        }
+        out.sortedBy { it.first }.map { it.second }
+    }
+
+    suspend fun quickImport(uri: Uri, deferPostProcessing: Boolean = false): QuickImportOutcome {
         val file = load(uri)
         val detected = detect(file)
         val all = accounts.all()
@@ -275,7 +314,7 @@ class ImportRepository @Inject constructor(
         return when {
             preview.dedup.newRows.isEmpty() -> QuickImportOutcome.AlreadyImported(account.nickname, preview.statement.transactions.size)
             preview.statement.warnings.isNotEmpty() -> QuickImportOutcome.NeedsReview(detected, preview.statement.warnings.first())
-            else -> QuickImportOutcome.Imported(commit(preview), account.nickname, preview)
+            else -> QuickImportOutcome.Imported(commit(preview, deferPostProcessing), account.nickname, preview)
         }
     }
 
