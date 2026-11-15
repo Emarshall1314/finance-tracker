@@ -1,6 +1,8 @@
 package ca.emarshall.finance.ui.transactions
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -87,22 +89,31 @@ fun TransactionDetailScreen(nav: NavController, vm: TransactionDetailViewModel =
     val message by vm.message.collectAsStateWithLifecycle()
     var notes by remember { mutableStateOf<String?>(null) }
 
-    Column(Modifier.fillMaxSize()) {
-        BackTopBar("Transaction", onBack = { nav.popBackStack() })
+    Column(Modifier.fillMaxSize().background(ca.emarshall.finance.ui.theme.Fin.palette.background)) {
+        BackTopBar("", onBack = { nav.popBackStack() })
         val tx = t ?: return@Column
         LaunchedEffect(tx.id) { if (notes == null) notes = tx.notes.orEmpty() }
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(tx.merchant, style = MaterialTheme.typography.headlineSmall)
-            MoneyText(tx.amountCents, currency = tx.currency, style = MaterialTheme.typography.headlineMedium, bold = true)
-            SectionCard(null) {
-                LabeledRow("Date") { Text(tx.date.pretty()) }
-                LabeledRow("Account") { Text(tx.accountNickname) }
-                LabeledRow("Source") { Text(tx.source) }
-                Text("Bank description", style = MaterialTheme.typography.labelMedium)
-                Text(tx.rawDescription, style = MaterialTheme.typography.bodyMedium)
+            val p = ca.emarshall.finance.ui.theme.Fin.palette
+            Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                ca.emarshall.finance.ui.design.IconTile(
+                    if (tx.transferLinkId != null) androidx.compose.material.icons.Icons.Default.SwapHoriz else ca.emarshall.finance.ui.categoryIcon(tx.categoryIcon),
+                    androidx.compose.ui.graphics.Color((tx.categoryColor ?: 0xFF8E8E93).toInt()), size = 60.dp,
+                )
+                Text(tx.merchant, style = MaterialTheme.typography.titleLarge, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                Text(
+                    (if (tx.amountCents > 0) "+" else "−") + ca.emarshall.finance.core.money.Money.format(Math.abs(tx.amountCents), tx.currency, showCurrency = true),
+                    style = MaterialTheme.typography.headlineLarge, color = if (tx.amountCents > 0) p.positive else p.label,
+                )
+                Text("${tx.date.pretty()} · ${tx.accountNickname}", style = MaterialTheme.typography.bodyMedium, color = p.secondaryLabel)
+            }
+            ca.emarshall.finance.ui.design.Group {
+                ca.emarshall.finance.ui.design.GroupRow("Bank description", subtitle = tx.rawDescription)
+                ca.emarshall.finance.ui.design.GroupRow("Imported from", value = tx.source.lowercase().replaceFirstChar { it.uppercase() }, divider = false)
             }
             Picker(
                 "Category", cats.firstOrNull { it.id == tx.categoryId }, cats,

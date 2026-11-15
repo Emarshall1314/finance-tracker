@@ -1,6 +1,10 @@
 package ca.emarshall.finance.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -189,22 +193,27 @@ fun AppRoot(
 
 @Composable
 private fun LockScreen(deviceSecure: Boolean, onUnlock: () -> Unit, onContinueInsecure: () -> Unit) {
+    val white = androidx.compose.ui.graphics.Color.White
     Column(
-        Modifier.fillMaxSize().padding(32.dp),
+        Modifier.fillMaxSize().background(ca.emarshall.finance.ui.theme.Fin.palette.heroGradient).padding(32.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Icon(Icons.Default.Lock, contentDescription = null)
-        Text("Finance Tracker is locked", style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
+        Icon(Icons.Default.Lock, contentDescription = null, tint = white, modifier = Modifier.size(44.dp))
+        Text("Finance Tracker", style = MaterialTheme.typography.headlineMedium, color = white, textAlign = TextAlign.Center)
         if (deviceSecure) {
-            Button(onClick = onUnlock) { Text("Unlock") }
+            Button(
+                onClick = onUnlock,
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = white, contentColor = ca.emarshall.finance.ui.theme.Fin.palette.accent),
+                modifier = Modifier.height(50.dp).fillMaxWidth(0.6f),
+            ) { Text("Unlock") }
         } else {
             Text(
                 "Your phone has no screen lock, so the app can't lock itself. Set a PIN, pattern or fingerprint in " +
                     "your phone's settings to protect your financial data.",
-                textAlign = TextAlign.Center,
+                textAlign = TextAlign.Center, color = white.copy(alpha = 0.9f),
             )
-            TextButton(onClick = onContinueInsecure) { Text("Continue without a lock") }
+            TextButton(onClick = onContinueInsecure) { Text("Continue without a lock", color = white) }
         }
     }
 }
