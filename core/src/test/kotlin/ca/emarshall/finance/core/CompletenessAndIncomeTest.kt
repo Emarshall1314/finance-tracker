@@ -113,3 +113,45 @@ class InvestedAndOverallTest {
         assertEquals(7_000L, t.spendingCents)
     }
 }
+
+class MoneyFlowTest {
+    private fun cat(name: String, cents: Long) = ca.emarshall.finance.core.analytics.CategoryTotal(name.lowercase(), name, cents)
+    private val flows = ca.emarshall.finance.core.analytics.MoneyFlows
+    private fun aside(s: Long, i: Long) = ca.emarshall.finance.core.analytics.SetAsideTotals(s, i)
+
+    @Test fun bothSidesAlwaysBalance() {
+        // Earned 6,000; spent 4,000; 500 to savings, 1,000 to investments; 500 left over.
+        val f = flows.build(600_000, listOf(cat("Rent", 250_000), cat("Groceries", 100_000), cat("Dining", 50_000)), aside(50_000, 100_000))!!
+        assertEquals(f.sources.sumOf { it.cents }, f.targets.sumOf { it.cents })
+        assertEquals(listOf("Rent", "Groceries", "Dining", "Savings", "Investments", "Left in chequing"), f.targets.map { it.label })
+        assertEquals(50_000L, f.targets.last().cents)
+    }
+
+    @Test fun overspendingComesFromTheBalance() {
+        val f = flows.build(100_000, listOf(cat("Travel", 180_000)), aside(0, 0))!!
+        assertEquals(listOf("Income", "From your balance"), f.sources.map { it.label })
+        assertEquals(80_000L, f.sources.last().cents)
+        assertEquals(f.sources.sumOf { it.cents }, f.targets.sumOf { it.cents })
+    }
+
+    @Test fun moneyTakenOutOfSavingsIsASource() {
+        val f = flows.build(100_000, listOf(cat("Auto", 150_000)), aside(-50_000, 0))!!
+        assertEquals(listOf("Income", "From savings"), f.sources.map { it.label })
+        assertEquals(listOf("Auto"), f.targets.map { it.label })
+    }
+
+    @Test fun smallCategoriesAreGrouped() {
+        val cats = (1..9).map { cat("C$it", 1_000L * (10 - it)) }
+        val f = flows.build(100_000, cats, aside(0, 0))!!
+        assertEquals("Everything else", f.targets[6].label)
+        assertEquals(6_000L, f.targets[6].cents) // 3,000 + 2,000 + 1,000
+        assertNull(flows.build(0, emptyList(), aside(0, 0)))
+    }
+
+    @Test fun dailySpendingNetsRefunds() {
+        var id = 0L
+        fun f(day: Int, cents: Long) = TxFact(++id, 1, LocalDate.of(2026, 10, day), cents, "CAD", "shopping", "Shopping", CategoryKind.EXPENSE, "M", false, AccountKind.CARD)
+        val d = Analytics(listOf(f(3, -5_000), f(3, -2_000), f(4, -1_000), f(4, 1_500), f(9, -700))).dailySpending(YearMonth.of(2026, 10))
+        assertEquals(mapOf(3 to 7_000L, 9 to 700L), d) // the 4th nets to a refund, so it isn't a spending day
+    }
+}

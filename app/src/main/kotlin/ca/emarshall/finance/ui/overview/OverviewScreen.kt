@@ -127,23 +127,53 @@ fun OverviewScreen(nav: NavController, vm: OverviewViewModel = hiltViewModel()) 
                 FinCard {
                     if (s.categories.isEmpty()) Text("No spending this month.", color = Fin.palette.secondaryLabel)
                     val max = s.categories.maxOfOrNull { it.first.cents }?.coerceAtLeast(1) ?: 1L
+                    val all = s.categories.sumOf { it.first.cents }.coerceAtLeast(1)
                     val shown = if (allCategories) s.categories else s.categories.take(5)
+                    val before = s.month.minusMonths(1).format(SHORT_MONTH)
                     shown.forEachIndexed { i, (c, id) ->
                         val color = Fin.palette.chart[i % Fin.palette.chart.size]
-                        Column(
-                            Modifier.fillMaxWidth().clickable(enabled = id != null) {
+                        Row(
+                            Modifier.fillMaxWidth().clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp)).clickable(enabled = id != null) {
                                 nav.navigate(ca.emarshall.finance.ui.CategoryRoute(id ?: -1, s.month.toString()))
-                            }.padding(vertical = 4.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            }.padding(vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(c.categoryName, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
-                                Text(Money.formatWhole(c.cents), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                            ca.emarshall.finance.ui.design.IconTile(ca.emarshall.finance.ui.categoryIcon(s.categoryStyle[c.categoryKey]?.first), color, size = 36.dp)
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(c.categoryName, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge, maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                    Text(Money.formatWhole(c.cents), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                                }
+                                ShareBar(c.cents.toFloat() / max.toFloat(), color)
+                                // Share of the month, and how it compares with the month before.
+                                val prev = s.previousByCategory[c.categoryKey]
+                                val diff = prev?.let { c.cents - it }
+                                Row {
+                                    Text("${c.cents * 100 / all}% of spending", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = Fin.palette.secondaryLabel)
+                                    if (s.previousTotals != null) Text(
+                                        when {
+                                            prev == null -> "new since $before"
+                                            diff == 0L -> "same as $before"
+                                            else -> "${if (diff!! > 0) "▲" else "▼"} ${Money.formatWhole(Math.abs(diff))} vs $before"
+                                        },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (diff != null && diff < 0) Fin.palette.positive else if (diff != null && diff > 0) Fin.palette.warning else Fin.palette.secondaryLabel,
+                                    )
+                                }
                             }
-                            ShareBar(c.cents.toFloat() / max.toFloat(), color)
                         }
                     }
                 }
+            }
+
+            s.flow?.let { flow ->
+                item { SectionHeader("Where it went") }
+                item { FlowCard(s, flow, nav) }
+            }
+            if (s.daily.isNotEmpty()) {
+                item { SectionHeader("Day by day") }
+                item { CalendarCard(s, nav) }
             }
 
             if (s.ytd.isNotEmpty()) {
@@ -216,6 +246,16 @@ private fun Hero(s: OverviewState, onPrev: () -> Unit, onNext: () -> Unit) {
             HeroStat("Income", Money.formatWhole(s.totals.incomeCents))
             HeroStat("Spending", Money.formatWhole(s.totals.spendingCents))
             HeroStat("Saved", s.totals.savingsRatePercent?.let { "$it%" } ?: "–")
+        }
+        s.previousTotals?.let { prev ->
+            val diff = s.totals.spendingCents - prev.spendingCents
+            if (diff != 0L) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Spent ${Money.formatWhole(Math.abs(diff))} ${if (diff > 0) "more" else "less"} than in ${s.month.minusMonths(1).month.name.lowercase().replaceFirstChar { it.uppercase() }}",
+                    color = Color.White.copy(alpha = 0.9f), style = MaterialTheme.typography.bodyMedium,
+                )
+            }
         }
         s.setAside?.takeIf { it.totalCents != 0L }?.let { a ->
             Spacer(Modifier.height(6.dp))
@@ -558,6 +598,101 @@ private fun YtdDonutCard(s: OverviewState, nav: NavController) {
                     }
                 }
             }
+        }
+    }
+}
+
+/** Income on the left pouring into where it went on the right: spending, savings, investments, what's left. */
+@Composable
+private fun FlowCard(s: OverviewState, flow: ca.emarshall.finance.core.analytics.MoneyFlow, nav: NavController) {
+    val p = Fin.palette
+    val savings = Color(0xFF26A69A)
+    val investments = Color(0xFF5AC8FA)
+    var categoryIndex = 0
+    fun colorOf(part: ca.emarshall.finance.core.analytics.FlowPart): Color = when (part.kind) {
+        ca.emarshall.finance.core.analytics.FlowKind.INCOME -> p.positive
+        ca.emarshall.finance.core.analytics.FlowKind.FROM_SAVINGS, ca.emarshall.finance.core.analytics.FlowKind.TO_SAVINGS -> savings
+        ca.emarshall.finance.core.analytics.FlowKind.FROM_INVESTMENTS, ca.emarshall.finance.core.analytics.FlowKind.TO_INVESTMENTS -> investments
+        ca.emarshall.finance.core.analytics.FlowKind.FROM_BALANCE -> p.negative
+        ca.emarshall.finance.core.analytics.FlowKind.CATEGORY -> p.chart[categoryIndex++ % p.chart.size]
+        ca.emarshall.finance.core.analytics.FlowKind.OTHER_SPENDING -> p.tertiaryLabel
+        ca.emarshall.finance.core.analytics.FlowKind.LEFT_OVER -> p.positive.copy(alpha = 0.6f)
+    }
+    val sources = flow.sources.map { ca.emarshall.finance.ui.design.FlowNode(it.label, it.cents, colorOf(it)) }
+    val targets = flow.targets.map { ca.emarshall.finance.ui.design.FlowNode(it.label, it.cents, colorOf(it)) }
+    var sel by remember(flow) { mutableStateOf<Int?>(null) }
+    val total = flow.totalCents.coerceAtLeast(1)
+    FinCard {
+        val picked = sel?.let { flow.targets.getOrNull(it) }
+        if (picked == null) {
+            Text("${Money.formatWhole(flow.totalCents)} in ${s.month.pretty()}", style = MaterialTheme.typography.titleMedium)
+            Text("Followed from where it came from to where it went. Tap a destination.", style = MaterialTheme.typography.bodySmall, color = p.secondaryLabel)
+        } else {
+            Text("${picked.label} · ${Money.formatWhole(picked.cents)}", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "${picked.cents * 100 / total}% of the month's money" + when (picked.kind) {
+                    ca.emarshall.finance.core.analytics.FlowKind.LEFT_OVER -> ": came in and wasn't spent or moved"
+                    ca.emarshall.finance.core.analytics.FlowKind.TO_SAVINGS -> ": moved to your savings account"
+                    ca.emarshall.finance.core.analytics.FlowKind.TO_INVESTMENTS -> ": moved to your investment accounts"
+                    else -> ""
+                },
+                style = MaterialTheme.typography.bodySmall, color = p.secondaryLabel,
+            )
+        }
+        ca.emarshall.finance.ui.design.FlowChart(sources, targets, sel, { sel = it }, { Money.formatWhole(it) })
+        if (flow.sources.any { it.kind == ca.emarshall.finance.core.analytics.FlowKind.FROM_BALANCE }) {
+            Text("More went out than came in this month; the difference came out of your chequing balance.", style = MaterialTheme.typography.bodySmall, color = p.warning)
+        }
+        picked?.categoryKey?.let { key ->
+            val id = s.categories.firstOrNull { it.first.categoryKey == key }?.second
+            if (id != null) TextButton(onClick = { nav.navigate(ca.emarshall.finance.ui.CategoryRoute(id, s.month.toString())) }) { Text("Open ${picked.label}") }
+        }
+    }
+}
+
+/** The month as a calendar shaded by spending; tap a day for what was bought. */
+@Composable
+private fun CalendarCard(s: OverviewState, nav: NavController) {
+    val p = Fin.palette
+    val days = (1..s.month.lengthOfMonth()).map { ca.emarshall.finance.ui.design.HeatDay(it, s.daily[it] ?: 0L) }
+    var sel by remember(s.month) { mutableStateOf<Int?>(null) }
+    val dayFormat = remember { java.time.format.DateTimeFormatter.ofPattern("EEEE, MMM d", java.util.Locale.CANADA) }
+    FinCard {
+        val picked = sel
+        if (picked == null) {
+            val busiest = s.daily.maxByOrNull { it.value }
+            val quiet = days.count { it.cents == 0L }
+            Text(
+                busiest?.let { "Biggest day: ${s.month.atDay(it.key).format(SHORT_DAY)} · ${Money.formatWhole(it.value)}" } ?: "No spending",
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                "$quiet day${if (quiet == 1) "" else "s"} with no spending · darker means more · tap a day",
+                style = MaterialTheme.typography.bodySmall, color = p.secondaryLabel,
+            )
+        } else {
+            Text(s.month.atDay(picked).format(dayFormat), style = MaterialTheme.typography.titleMedium)
+            Text(
+                (s.daily[picked] ?: 0L).let { if (it == 0L) "Nothing spent" else "${Money.format(it)} spent" },
+                style = MaterialTheme.typography.bodySmall, color = p.secondaryLabel,
+            )
+        }
+        ca.emarshall.finance.ui.design.MonthHeatmap(days, s.month.atDay(1).dayOfWeek.value % 7, sel, { sel = it }, p.accent)
+        if (picked != null) {
+            s.dayItems[picked].orEmpty().forEach { item ->
+                Row(
+                    Modifier.fillMaxWidth().clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                        .clickable { nav.navigate(ca.emarshall.finance.ui.TransactionRoute(item.id)) }.padding(vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(item.merchant, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    Text(Money.format(item.cents), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = p.tertiaryLabel, modifier = Modifier.size(18.dp))
+                }
+            }
+        }
+        if (s.pendingCards.isNotEmpty()) {
+            Text("Card purchases for this month aren't all in yet, so some days will fill in later.", style = MaterialTheme.typography.bodySmall, color = p.tertiaryLabel)
         }
     }
 }

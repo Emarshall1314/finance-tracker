@@ -9,6 +9,7 @@ import ca.emarshall.finance.core.analytics.CategoryTotal
 import ca.emarshall.finance.core.analytics.DataFreshness
 import ca.emarshall.finance.core.analytics.MerchantTotal
 import ca.emarshall.finance.core.analytics.MonthTotals
+import ca.emarshall.finance.core.analytics.forCashFlow
 import ca.emarshall.finance.core.analytics.NetWorth
 import ca.emarshall.finance.core.recurring.RecurringSeries
 import ca.emarshall.finance.data.AccountRepository
@@ -48,6 +49,9 @@ data class Checklist(
 
 data class FreshnessRow(val accountId: Long, val nickname: String, val dataThrough: LocalDate?, val stale: Boolean)
 
+/** One purchase, for the day picked on the spending calendar. */
+data class DayItem(val id: Long, val merchant: String, val cents: Long)
+
 data class OverviewState(
     val loading: Boolean = true,
     val checklist: Checklist = Checklist(false, false, false, false, false),
@@ -81,6 +85,16 @@ data class OverviewState(
     /** Year to date (Jan 1 to the end of [completeThrough]): spending by category, for the donut. */
     val ytd: List<Pair<CategoryTotal, Long?>> = emptyList(),
     val ytdYear: Int = LocalDate.now().year,
+    /** The month before the one shown, for "vs last month". */
+    val previousTotals: MonthTotals? = null,
+    /** Each category's icon name and colour (by category key), and what it came to the month before. */
+    val categoryStyle: Map<String, Pair<String?, Long?>> = emptyMap(),
+    val previousByCategory: Map<String, Long> = emptyMap(),
+    /** Where the month's money came from and went. */
+    val flow: ca.emarshall.finance.core.analytics.MoneyFlow? = null,
+    /** Spending on each day of the month, and the biggest purchases of each day. */
+    val daily: Map<Int, Long> = emptyMap(),
+    val dayItems: Map<Int, List<DayItem>> = emptyMap(),
     /** Places whose payments the rules left in "Other", and what they add up to. */
     val unsortedPlaces: Int = 0,
     val unsortedCents: Long = 0,
@@ -179,6 +193,16 @@ class OverviewViewModel @Inject constructor(
                 ?.let { it.name to ca.emarshall.finance.core.statements.MonthCompleteness.nextClose(it) },
             ytd = a.spendingByCategory(LocalDate.of(last.year, 1, 1), last.atEndOfMonth()).map { it to catIdByKey[it.categoryKey] },
             ytdYear = last.year,
+            previousTotals = a.monthTotals(m.minusMonths(1)).takeIf { it.incomeCents != 0L || it.spendingCents != 0L },
+            categoryStyle = b.categories.associate { it.ruleKey to (it.icon to it.color) },
+            previousByCategory = a.spendingByCategory(m.minusMonths(1)).associate { it.categoryKey to it.cents },
+            flow = ca.emarshall.finance.core.analytics.MoneyFlows.build(a.monthTotals(m).incomeCents, a.spendingByCategory(m), a.setAsideIn(m)),
+            daily = a.dailySpending(m),
+            dayItems = facts.asSequence()
+                .mapNotNull { it.forCashFlow() }
+                .filter { it.currency == "CAD" && YearMonth.from(it.date) == m && !it.countsAsTransfer && it.amountCents < 0 && it.kind == ca.emarshall.finance.core.model.CategoryKind.EXPENSE }
+                .groupBy { it.date.dayOfMonth }
+                .mapValues { (_, l) -> l.sortedBy { it.amountCents }.take(4).map { DayItem(it.id, it.merchant, -it.amountCents) } },
             unsortedPlaces = unsorted.size,
             unsortedCents = unsorted.sumOf { it.cents },
         )

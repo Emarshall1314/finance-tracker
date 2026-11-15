@@ -121,6 +121,13 @@ class Analytics(rawFacts: List<TxFact>, private val homeCurrency: String = "CAD"
         return SetAsideTotals(net(SetAside.SAVINGS), net(SetAside.INVESTMENTS))
     }
 
+    /** Spending on each day of [m] (day of month to cents). Refunds reduce their day; a day never goes below zero. */
+    fun dailySpending(m: YearMonth): Map<Int, Long> =
+        inMonth(m).filter { !it.countsAsTransfer && it.kind == CategoryKind.EXPENSE }
+            .groupBy { it.date.dayOfMonth }
+            .mapValues { (_, l) -> (-l.sumOf { it.amountCents }).coerceAtLeast(0) }
+            .filterValues { it > 0 }
+
     /** Income and spending over every fact given, with the same rules as the monthly totals. */
     fun overall(): MonthTotalsLite {
         val counted = home.filterNot { it.countsAsTransfer }
