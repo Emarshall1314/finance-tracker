@@ -49,6 +49,10 @@ import androidx.navigation.toRoute
 import ca.emarshall.finance.data.AccountRepository
 import ca.emarshall.finance.data.CategoryRepository
 import ca.emarshall.finance.data.TransactionRepository
+import ca.emarshall.finance.data.isTransfer
+import ca.emarshall.finance.data.toFact
+import ca.emarshall.finance.data.toFacts
+import kotlinx.coroutines.flow.map
 import ca.emarshall.finance.data.db.AccountEntity
 import ca.emarshall.finance.data.db.CategoryEntity
 import ca.emarshall.finance.data.db.TxRow
@@ -117,12 +121,18 @@ class TransactionsViewModel @Inject constructor(
         transactions.search(f.accountId, f.categoryId, from, to, f.query)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    val totals = combine(rows, filter) { r, _ ->
-        r.orEmpty().filter { it.currency == "CAD" }.let { l -> l.filter { it.amountCents > 0 }.sumOf { it.amountCents } to l.filter { it.amountCents < 0 }.sumOf { it.amountCents } }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0L to 0L)
+    /** Income and spending with the same rules as Home: transfers and activity inside Questrade don't count. */
+    val totals = rows.map { r ->
+        val list = r.orEmpty()
+        val t = ca.emarshall.finance.core.analytics.Analytics(list.toFacts()).overall()
+        val left = list.count { it.isTransfer || it.toFact().accountKind == ca.emarshall.finance.core.analytics.AccountKind.INVESTMENT }
+        ActivityTotals(t.incomeCents, t.spendingCents, left)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ActivityTotals(0, 0, 0))
 
     fun update(f: (TxFilter) -> TxFilter) { filter.value = f(filter.value) }
 }
+
+data class ActivityTotals(val incomeCents: Long, val spendingCents: Long, val notCounted: Int)
 
 @Composable
 fun TransactionsScreen(nav: NavController, route: TransactionsRoute, vm: TransactionsViewModel = hiltViewModel()) {
@@ -165,9 +175,15 @@ fun TransactionsScreen(nav: NavController, route: TransactionsRoute, vm: Transac
             }
         }
         item {
-            Row(Modifier.padding(horizontal = 4.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text("In ${Money.formatWhole(totals.first)}", color = p.positive, style = MaterialTheme.typography.labelLarge)
-                Text("Out ${Money.formatWhole(-totals.second)}", color = p.secondaryLabel, style = MaterialTheme.typography.labelLarge)
+            androidx.compose.foundation.layout.Column(Modifier.padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Text("Income ${Money.formatWhole(totals.incomeCents)}", color = p.positive, style = MaterialTheme.typography.labelLarge)
+                    Text("Spending ${Money.formatWhole(totals.spendingCents)}", color = p.label, style = MaterialTheme.typography.labelLarge)
+                }
+                if (totals.notCounted > 0) Text(
+                    "Not counted: ${totals.notCounted} transfers between your accounts and investment-account transactions",
+                    color = p.tertiaryLabel, style = MaterialTheme.typography.bodySmall,
+                )
             }
         }
         val list = rows

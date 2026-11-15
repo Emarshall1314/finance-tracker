@@ -76,3 +76,35 @@ class UnlockedMonthTest {
         org.junit.Assert.assertEquals(java.time.LocalDate.of(2027, 2, 28), mc.nextClose(chequing.copy(coveredThrough = java.time.LocalDate.of(2027, 1, 31))))
     }
 }
+
+class InvestedAndOverallTest {
+    private var id = 0L
+    private val oct = LocalDate.of(2026, 10, 10)
+    private fun f(cents: Long, key: String, kind: CategoryKind, acct: AccountKind, link: Boolean = false, toInv: Boolean = false) =
+        TxFact(++id, 1, oct, cents, "CAD", key, key, kind, "M", link, acct, toInv)
+
+    @Test fun investedCountsTheBankSideOnly() {
+        val facts = listOf(
+            f(-150_000, "investments_transfer", CategoryKind.TRANSFER, AccountKind.BANK, link = true, toInv = true), // chequing -> Questrade
+            f(150_000, "investments_transfer", CategoryKind.TRANSFER, AccountKind.INVESTMENT, link = true, toInv = true), // Questrade side
+            f(20_000, "investments_transfer", CategoryKind.TRANSFER, AccountKind.BANK, toInv = true), // withdrawal back
+            f(-5_000, "groceries", CategoryKind.EXPENSE, AccountKind.BANK),
+        )
+        assertEquals(130_000L, Analytics(facts).investedIn(YearMonth.of(2026, 10)))
+    }
+
+    @Test fun overallLeavesOutTransfersAndInvestmentActivity() {
+        val facts = listOf(
+            f(300_000, "salary", CategoryKind.INCOME, AccountKind.BANK),
+            f(-50_000, "card_payment", CategoryKind.TRANSFER, AccountKind.BANK, link = true), // chequing pays the card
+            f(50_000, "card_payment", CategoryKind.TRANSFER, AccountKind.CARD, link = true),
+            f(-8_000, "dining", CategoryKind.EXPENSE, AccountKind.CARD),
+            f(1_000, "refund", CategoryKind.INCOME, AccountKind.CARD), // a refund lowers spending
+            f(-400_000, "other", CategoryKind.EXPENSE, AccountKind.INVESTMENT), // a stock buy
+            f(500_000, "other_income", CategoryKind.INCOME, AccountKind.INVESTMENT), // a stock sale
+        )
+        val t = Analytics(facts).overall()
+        assertEquals(300_000L, t.incomeCents)
+        assertEquals(7_000L, t.spendingCents)
+    }
+}

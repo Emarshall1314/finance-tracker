@@ -20,7 +20,7 @@ import ca.emarshall.finance.data.TransactionRepository
 import ca.emarshall.finance.data.db.FinanceDatabase
 import ca.emarshall.finance.data.latestBalances
 import ca.emarshall.finance.data.ruleKey
-import ca.emarshall.finance.data.toFact
+import ca.emarshall.finance.data.toFacts
 import ca.emarshall.finance.data.typeEnum
 import ca.emarshall.finance.data.institutionEnum
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -57,6 +57,8 @@ data class OverviewState(
     val series: List<MonthTotals> = emptyList(),
     /** Biggest spending categories for each month in [series], for the chart's tap details. */
     val seriesCategories: Map<YearMonth, List<Pair<CategoryTotal, Long?>>> = emptyMap(),
+    /** Net moved into investment accounts (Questrade) in each month of [series]; part of what was saved. */
+    val seriesInvested: Map<YearMonth, Long> = emptyMap(),
     val topMerchants: List<MerchantTotal> = emptyList(),
     val feesCents: Long = 0,
     val upcomingBills: List<RecurringSeries> = emptyList(),
@@ -120,7 +122,7 @@ class OverviewViewModel @Inject constructor(
         // Only complete months: before any statements, fall back to the current month.
         val last = done ?: YearMonth.from(today)
         val m = picked?.coerceAtMost(last) ?: last
-        val facts = b.rows.map { it.toFact() }
+        val facts = b.rows.toFacts()
         val a = Analytics(facts)
         val catIdByKey = b.categories.associate { it.ruleKey to it.id }
         val byId = b.accounts.associateBy { it.id }
@@ -140,6 +142,7 @@ class OverviewViewModel @Inject constructor(
             totals = a.monthTotals(m),
             categories = a.spendingByCategory(m).map { it to catIdByKey[it.categoryKey] },
             series = a.monthSeries(last, 12).dropWhile { it.incomeCents == 0L && it.spendingCents == 0L },
+            seriesInvested = a.monthSeries(last, 12).associate { mt -> mt.month to a.investedIn(mt.month) },
             seriesCategories = a.monthSeries(last, 12).associate { mt ->
                 mt.month to a.spendingByCategory(mt.month).take(3).map { it to catIdByKey[it.categoryKey] }
             },

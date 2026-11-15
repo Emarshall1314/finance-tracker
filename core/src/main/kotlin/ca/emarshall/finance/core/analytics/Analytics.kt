@@ -20,6 +20,8 @@ data class TxFact(
     val isTransfer: Boolean,
     /** What kind of account it's in; decides whether money in counts as income. */
     val accountKind: AccountKind = AccountKind.BANK,
+    /** Money moved between this (bank or card) account and an investment account, e.g. a Questrade deposit. */
+    val toInvestments: Boolean = false,
 ) {
     val countsAsTransfer get() = isTransfer || kind == CategoryKind.TRANSFER
 }
@@ -100,6 +102,21 @@ class Analytics(rawFacts: List<TxFact>, private val homeCurrency: String = "CAD"
                     spendingCents = -l.filter { it.kind == CategoryKind.EXPENSE }.sumOf { it.amountCents },
                 )
             }
+
+    /**
+     * Net money moved from bank accounts into investment accounts in [m]: deposits minus withdrawals, seen
+     * from the bank side (so it works from statements alone, without a Questrade sync).
+     */
+    fun investedIn(m: YearMonth): Long = -inMonth(m).filter { it.toInvestments }.sumOf { it.amountCents }
+
+    /** Income and spending over every fact given, with the same rules as the monthly totals. */
+    fun overall(): MonthTotalsLite {
+        val counted = home.filterNot { it.countsAsTransfer }
+        return MonthTotalsLite(
+            incomeCents = counted.filter { it.kind == CategoryKind.INCOME }.sumOf { it.amountCents },
+            spendingCents = -counted.filter { it.kind == CategoryKind.EXPENSE }.sumOf { it.amountCents },
+        )
+    }
 
     private fun totals(m: YearMonth, rows: List<TxFact>): MonthTotals {
         val counted = rows.filterNot { it.countsAsTransfer }

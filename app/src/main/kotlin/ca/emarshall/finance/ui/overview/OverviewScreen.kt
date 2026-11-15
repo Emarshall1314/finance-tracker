@@ -279,6 +279,12 @@ private fun CashFlowCard(s: OverviewState, nav: NavController, onShowMonth: (Yea
                 "${Money.formatWhole(Math.abs(diff))} ${if (diff >= 0) "better" else "worse"} than your average month",
                 style = MaterialTheme.typography.bodySmall, color = p.secondaryLabel,
             )
+            val inv = s.seriesInvested[picked.month] ?: 0L
+            if (inv > 0) Text(
+                if (picked.netCents > 0 && inv <= picked.netCents) "${Money.formatWhole(inv)} of it went into your investments"
+                else "${Money.formatWhole(inv)} went into your investments",
+                style = MaterialTheme.typography.bodySmall, color = p.chart[2],
+            )
         }
         ca.emarshall.finance.ui.design.BarChart(
             bars = months.map { mt ->
@@ -300,6 +306,8 @@ private fun CashFlowCard(s: OverviewState, nav: NavController, onShowMonth: (Yea
             val withData = months.filter { !notFinal(it.month) }
             StatRow("Average income", Money.formatWhole(withData.sumOf { it.incomeCents } / withData.size.coerceAtLeast(1)))
             StatRow("Average spending", Money.formatWhole(withData.sumOf { it.spendingCents } / withData.size.coerceAtLeast(1)))
+            val invested = withData.sumOf { s.seriesInvested[it.month] ?: 0L }
+            if (invested != 0L) StatRow("Average invested", Money.formatWhole(invested / withData.size.coerceAtLeast(1)), p.chart[2])
             if (withData.size >= 2) {
                 val best = withData.maxBy { it.netCents }
                 val worst = withData.minBy { it.netCents }
@@ -309,6 +317,9 @@ private fun CashFlowCard(s: OverviewState, nav: NavController, onShowMonth: (Yea
         } else {
             StatRow("Income", Money.formatWhole(picked.incomeCents))
             StatRow("Spending", Money.formatWhole(picked.spendingCents))
+            (s.seriesInvested[picked.month] ?: 0L).takeIf { it != 0L }?.let { inv ->
+                StatRow(if (inv > 0) "Invested" else "Taken out of investments", Money.formatWhole(Math.abs(inv)), p.chart[2])
+            }
             StatRow("Kept", picked.savingsRatePercent?.let { "$it% of income" } ?: "–")
             val cats = s.seriesCategories[picked.month].orEmpty()
             if (cats.isNotEmpty()) {

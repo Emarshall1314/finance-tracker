@@ -37,6 +37,20 @@ fun TxRow.toFact() = TxFact(
     },
 )
 
+/**
+ * Facts for analytics, with moves between a bank or card account and an investment account marked
+ * (categorized To/From Investments, or linked to a row in an investment account).
+ */
+fun List<TxRow>.toFacts(): List<TxFact> {
+    val byId = associateBy { it.id }
+    return map { r ->
+        val linkedToInvestment = r.transferLinkId?.let { byId[it] }?.let { other ->
+            runCatching { ca.emarshall.finance.core.model.AccountType.valueOf(other.accountType) }.getOrNull()?.isInvestment == true
+        } == true
+        r.toFact().copy(toInvestments = r.categoryKey == "investments_transfer" || linkedToInvestment)
+    }
+}
+
 val TxRow.isTransfer: Boolean get() = transferLinkId != null || categoryKind == CategoryKind.TRANSFER.name
 
 @Singleton
